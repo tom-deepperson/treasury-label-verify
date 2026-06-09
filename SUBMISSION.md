@@ -9,8 +9,8 @@ Form: https://forms.osi.office365.us/r/xWrQGduMw7
 | 3 Email | thomas.tedone@gmail.com |
 | 4 Phone | 413-478-4427 |
 | 5 Instructions | https://github.com/treasurytakehome-rgb/instructions.git |
-| 6 Repository | (your public GitHub URL after push) |
-| 7 Deployed URL | (Cloud Run URL after deploy) |
+| 6 Repository | https://github.com/tom-deepperson/treasury-label-verify |
+| 7 Deployed URL | (run deploy after personal gcloud login — see DEPLOY_AUTH.md) |
 
 Provide reviewer password to Treasury separately or in README Reviewer access section.
 
