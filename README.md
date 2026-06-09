@@ -59,12 +59,14 @@ Suggested manual checks:
 
 ## Deploy (GCP Cloud Run)
 
-**Important:** project `YOUR_GCP_PROJECT_ID` must be accessed with the **personal** Google account that created it. If `gcloud` is on your business account, see [DEPLOY_AUTH.md](DEPLOY_AUTH.md).
+**Important:** set `GOOGLE_CLOUD_PROJECT` in `.env` and use the **personal** Google account that owns that project. If `gcloud` is on your business account, see [DEPLOY_AUTH.md](DEPLOY_AUTH.md).
 
 ```powershell
 cd E:\dev\treasury-label-verify
-# After: gcloud auth login (personal) + gcloud config set project YOUR_GCP_PROJECT_ID
+# PowerShell:
 .\scripts\deploy.ps1
+# Command Prompt (cmd):
+scripts\deploy.bat
 ```
 
 ## Reviewer access (Treasury)

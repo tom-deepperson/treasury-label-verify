@@ -1,13 +1,32 @@
 # Deploy treasury-label-verify to Cloud Run (personal GCP project).
-# Prerequisite: gcloud logged in with the account that owns YOUR_GCP_PROJECT_ID
+# Prerequisite: gcloud config configuration treasury-personal activated
 #   gcloud auth login
-#   gcloud config set account YOUR_PERSONAL_EMAIL
-#   gcloud config set project YOUR_GCP_PROJECT_ID
+#   gcloud config set account YOUR_PERSONAL_EMAIL@gmail.com
+#   gcloud config set project $env:GOOGLE_CLOUD_PROJECT
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
-
 Set-Location $Root
+
+function Invoke-Gcloud {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & gcloud @args
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prev
+    if ($code -ne 0) {
+        throw "gcloud exited ${code}: gcloud $($args -join ' ')"
+    }
+}
+
+function Get-GcloudValue {
+    param([string]$Name)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $raw = & gcloud config get-value $Name 2>&1
+    $ErrorActionPreference = $prev
+    ($raw | Where-Object { $_ -is [string] -and $_ -notmatch '^\s*$' } | Select-Object -Last 1).ToString().Trim()
+}
 
 $envFile = Join-Path $Root ".env"
 if (-not (Test-Path $envFile)) {
@@ -24,7 +43,10 @@ Get-Content $envFile | ForEach-Object {
     }
 }
 
-$ProjectId = if ($env:GOOGLE_CLOUD_PROJECT) { $env:GOOGLE_CLOUD_PROJECT } else { "YOUR_GCP_PROJECT_ID" }
+$ProjectId = $env:GOOGLE_CLOUD_PROJECT
+if ([string]::IsNullOrWhiteSpace($ProjectId)) {
+    Write-Error "Set GOOGLE_CLOUD_PROJECT in .env before deploying."
+}
 $Region = if ($env:DEPLOY_REGION) { $env:DEPLOY_REGION } else { "us-east1" }
 $Service = "treasury-label-verify"
 
@@ -35,24 +57,31 @@ foreach ($key in $required) {
     }
 }
 
-Write-Host "Using gcloud account: $(gcloud config get-value account 2>$null)"
+Write-Host "Using gcloud account: $(Get-GcloudValue account)"
 Write-Host "Using project: $ProjectId"
-$confirm = Read-Host "Continue deploy? (y/N)"
-if ($confirm -ne "y" -and $confirm -ne "Y") { exit 0 }
+if ($env:DEPLOY_CONFIRM -ne "y" -and $env:DEPLOY_CONFIRM -ne "Y") {
+    $confirm = Read-Host "Continue deploy? (y/N)"
+    if ($confirm -ne "y" -and $confirm -ne "Y") { exit 0 }
+}
 
-gcloud config set project $ProjectId
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com --quiet
+Invoke-Gcloud config set project $ProjectId
+Invoke-Gcloud services enable `
+    run.googleapis.com `
+    cloudbuild.googleapis.com `
+    artifactregistry.googleapis.com `
+    containerregistry.googleapis.com `
+    --quiet
 
-Write-Host "Building container (10-20 min first time)..."
-gcloud builds submit --tag "gcr.io/$ProjectId/$Service"
+Write-Host "Building and deploying from source (10-20 min first time)..."
 
 $reviewerUser = if ($env:REVIEWER_USERNAME) { $env:REVIEWER_USERNAME } else { "treasury" }
 $devUser = if ($env:DEVELOPER_USERNAME) { $env:DEVELOPER_USERNAME } else { "developer" }
 
-gcloud run deploy $Service `
-  --image "gcr.io/$ProjectId/$Service" `
+Invoke-Gcloud run deploy $Service `
+  --source . `
   --platform managed `
   --region $Region `
+  --quiet `
   --allow-unauthenticated `
   --min-instances 1 `
   --memory 2Gi `
@@ -63,7 +92,11 @@ gcloud run deploy $Service `
   --set-env-vars "DEVELOPER_USERNAME=$devUser,DEVELOPER_PASSWORD=$env:DEVELOPER_PASSWORD" `
   --set-env-vars "GEMINI_API_KEY=$env:GEMINI_API_KEY,OPENAI_API_KEY=$env:OPENAI_API_KEY,ANTHROPIC_API_KEY=$env:ANTHROPIC_API_KEY"
 
-$url = gcloud run services describe $Service --region $Region --format="value(status.url)"
+$prev = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$url = (& gcloud run services describe $Service --region $Region --format="value(status.url)" 2>&1 | Select-Object -Last 1).ToString().Trim()
+$ErrorActionPreference = $prev
+
 Write-Host ""
 Write-Host "Deployed: $url"
 Write-Host "Health:   $url/health"

@@ -1,9 +1,10 @@
 # Deploy auth: personal vs business Google account
 
-Project **`YOUR_GCP_PROJECT_ID`** is on your **personal** Google account.  
-`gcloud` may default to your **business** account (`deep-person-licensing`, etc.).
+Your Cloud Run project ID lives in **`.env`** as `GOOGLE_CLOUD_PROJECT` (see `.env.example`). Do not commit the real value.
 
-Cloud Run deploy will fail until `gcloud` uses the personal account that owns this project.
+`gcloud` may default to your **business** account (`deep-person-licensing`, etc.) while the take-home project is on your **personal** account.
+
+Cloud Run deploy will fail until `gcloud` uses the personal account that owns the project in `.env`.
 
 ## One-time: add personal account to gcloud
 
@@ -13,7 +14,7 @@ In **your own terminal** (browser login required):
 gcloud auth login
 ```
 
-Sign in with the **personal** Google account that created `YOUR_GCP_PROJECT_ID`.
+Sign in with the **personal** Google account that owns your GCP project.
 
 List accounts:
 
@@ -32,6 +33,8 @@ gcloud config set account YOUR_PERSONAL_EMAIL@gmail.com
 gcloud config set project YOUR_GCP_PROJECT_ID
 ```
 
+(`YOUR_GCP_PROJECT_ID` = value of `GOOGLE_CLOUD_PROJECT` in `.env`.)
+
 Switch back to business later:
 
 ```powershell
@@ -48,7 +51,7 @@ gcloud config get-value project
 Expected:
 
 - **account:** your personal email
-- **project:** `YOUR_GCP_PROJECT_ID`
+- **project:** matches `GOOGLE_CLOUD_PROJECT` in `.env`
 
 Quick access check:
 

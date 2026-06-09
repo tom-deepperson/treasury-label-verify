@@ -10,7 +10,7 @@ Form: https://forms.osi.office365.us/r/xWrQGduMw7
 | 4 Phone | 413-478-4427 |
 | 5 Instructions | https://github.com/treasurytakehome-rgb/instructions.git |
 | 6 Repository | https://github.com/tom-deepperson/treasury-label-verify |
-| 7 Deployed URL | (run deploy after personal gcloud login — see DEPLOY_AUTH.md) |
+| 7 Deployed URL | https://treasury-label-verify-divz63imaq-ue.a.run.app |
 
 Provide reviewer password to Treasury separately or in README Reviewer access section.
 
