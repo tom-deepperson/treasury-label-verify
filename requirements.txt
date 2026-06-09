@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+python-multipart
+jinja2
+itsdangerous
+python-dotenv
+pydantic
+pillow
+numpy
+opencv-python-headless
+easyocr
+httpx
+openai
+anthropic
+google-genai
+google-cloud-firestore
