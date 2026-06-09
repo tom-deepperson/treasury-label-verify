@@ -167,6 +167,7 @@ def build_verification_result(
         ),
         fields=fields,
         overall_status=overall_status(fields),
+        ocr_text=ocr_text,
         ocr_text_preview=(ocr_text[:500] + "...") if len(ocr_text) > 500 else ocr_text,
         log_lines=log_lines,
     )

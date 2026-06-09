@@ -36,6 +36,7 @@ class VerificationResult(BaseModel):
     rotation: RotationInfo
     fields: list[FieldComparison]
     overall_status: FieldStatus
+    ocr_text: str = ""
     ocr_text_preview: str = ""
     log_lines: list[str] = Field(default_factory=list)
 

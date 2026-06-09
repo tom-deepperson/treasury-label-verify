@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -93,12 +93,27 @@ def index(request: Request, _auth=Depends(require_auth)):
     )
 
 
+SAMPLES_DIR = BASE_DIR.parent / "samples"
+LABELS_DIR = SAMPLES_DIR / "labels"
+
+
 @app.get("/samples/applications.json")
 def sample_applications(_auth=Depends(require_auth)):
-    path = BASE_DIR.parent / "samples" / "applications.json"
+    path = SAMPLES_DIR / "applications.json"
     if not path.exists():
         raise HTTPException(status_code=404, detail="Sample applications not found")
     return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.get("/samples/labels/{filename}")
+def sample_label(filename: str, _auth=Depends(require_auth)):
+    safe_name = Path(filename).name
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = LABELS_DIR / safe_name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Sample label not found")
+    return FileResponse(path)
 
 
 @app.get("/api/usage")
