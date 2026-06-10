@@ -34,7 +34,7 @@ Development iterations that shaped the final design:
 | Secrets hygiene | Real `GOOGLE_CLOUD_PROJECT` and API keys live in `.env` only; docs and deploy scripts use placeholders |
 | Marketing noise | Warehouse/lot/DSP lines pollute brand reads; shared discard hints in `app/ocr/noise.py` are required |
 | Ironwood chaos sample | Scattered mandatory fields plus batch noise stress parser and assembly even when Vision reads all text |
-| Demo operations | Password gate and 10-test cap protect hosted API quotas; label images are never persisted |
+| Demo operations | Password gate and 50-test cap protect hosted API quotas; label images are never persisted |
 
 ## OCR evolution: EasyOCR to Google Vision
 
@@ -120,7 +120,7 @@ Batch uploads are processed **sequentially, one label at a time**, with terminal
 Hosted demo uses:
 
 - Password gate (`REVIEWER_USERNAME` / `REVIEWER_PASSWORD`)
-- `MAX_TESTS=10` to limit hosted demo usage and protect API quotas
+- `MAX_TESTS=50` to limit hosted demo usage and protect API quotas
 - Separate **developer** login with unlimited quota for internal testing
 
 Local development can disable quota via `MAX_TESTS=0`.
@@ -141,7 +141,7 @@ Local development can disable quota via `MAX_TESTS=0`.
 | Multi-angle + skew OCR | Meets rotated/skewed sticker requirement | Extra latency on first EasyOCR load locally |
 | Pluggable backends | EasyOCR/Paddle for offline dev and benchmarks | Three code paths to maintain |
 | Selectable LLM | Rescue-on-fail for messy layouts; zero LLM cost when parser passes | Only helps when text exists in OCR; adds latency on FAIL |
-| 10-test cap | Protects prototype resources | Limits reviewer batch size |
+| 50-test cap | Protects prototype resources | Limits reviewer batch size |
 | Affix-only uploads | Matches real reviewer workflow | Does not OCR full F 5100.31 form pages |
 
 ## Out of scope

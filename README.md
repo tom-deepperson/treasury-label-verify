@@ -152,7 +152,7 @@ The deploy script enables Cloud Vision, grants the Cloud Run runtime service acc
 | `OCR_BACKEND` | `vision` |
 | `ROTATION_OCR_BACKEND` | `easyocr` |
 | `USE_LLM` | `1` |
-| `MAX_TESTS` | `10` |
+| `MAX_TESTS` | `50` |
 | `WARM_OCR` | `1` |
 | `USAGE_STORE` | `file` |
 
@@ -176,7 +176,7 @@ For the hosted demo, provide:
 2. Username (`REVIEWER_USERNAME`)
 3. Password (`REVIEWER_PASSWORD`)
 
-The **10-test quota** applies to reviewer logins.
+The **50-test quota** applies to reviewer logins.
 
 ## Configuration
 

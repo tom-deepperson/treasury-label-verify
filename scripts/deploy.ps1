@@ -98,7 +98,7 @@ Invoke-Gcloud run deploy $Service `
   --cpu 2 `
   --concurrency 1 `
   --timeout 300 `
-  --set-env-vars "REVIEWER_USERNAME=$reviewerUser,MAX_TESTS=10,USAGE_STORE=file,WARM_OCR=1,OCR_BACKEND=vision,ROTATION_OCR_BACKEND=vision,USE_LLM=1" `
+  --set-env-vars "REVIEWER_USERNAME=$reviewerUser,MAX_TESTS=50,USAGE_STORE=file,WARM_OCR=1,OCR_BACKEND=vision,ROTATION_OCR_BACKEND=vision,USE_LLM=1" `
   --set-env-vars "REVIEWER_PASSWORD=$env:REVIEWER_PASSWORD,SESSION_SECRET=$env:SESSION_SECRET" `
   --set-env-vars "DEVELOPER_USERNAME=$devUser,DEVELOPER_PASSWORD=$env:DEVELOPER_PASSWORD" `
   --set-env-vars "GEMINI_API_KEY=$env:GEMINI_API_KEY,OPENAI_API_KEY=$env:OPENAI_API_KEY,ANTHROPIC_API_KEY=$env:ANTHROPIC_API_KEY,GEMINI_MODEL=gemini-3.1-flash-lite" `
