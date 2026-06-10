@@ -238,3 +238,7 @@ Rotation OCR tests use `OCR_BACKEND=easyocr` by default. Set `OCR_INTEGRATION=1`
 - Hosted quota counter resets on redeploy when `USAGE_STORE=file`
 
 See [APPROACH.md](APPROACH.md) for design rationale and the EasyOCR → Vision learning path.
+
+## License
+
+All rights reserved. Source is published for evaluation and portfolio review only; no license to use, copy, modify, or distribute. See [LICENSE](LICENSE).
