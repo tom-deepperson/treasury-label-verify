@@ -26,6 +26,7 @@ class FieldComparison(BaseModel):
 
 class RotationInfo(BaseModel):
     detected_rotation_deg: int
+    skew_correction_deg: int = 0
     was_upright: bool
     note: str = ""
 

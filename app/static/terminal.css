@@ -278,8 +278,33 @@ a { color: var(--amber); }
 }
 
 .result-meta {
-  margin: 0 0 1rem;
+  margin: 0 0 0.35rem;
   font-size: 0.92rem;
+}
+
+.result-meta-secondary {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.result-issue-list {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+}
+
+.result-issue-list.fail {
+  color: var(--red);
+}
+
+.result-issue-list.review {
+  color: var(--amber);
+  margin-bottom: 0.75rem;
+}
+
+.result-issue-list.fail:last-of-type,
+.result-meta-secondary {
+  margin-bottom: 1rem;
 }
 
 .compare-layout {
@@ -354,4 +379,42 @@ a { color: var(--amber); }
 .muted {
   color: #777;
   font-size: 0.9rem;
+}
+
+.label-only {
+  margin-bottom: 1.25rem;
+}
+
+.label-frame-large {
+  min-height: 320px;
+}
+
+.review-plain {
+  color: var(--amber);
+  font-size: 0.92rem;
+  margin: 0 0 1rem;
+}
+
+.debug-panel {
+  margin-top: 1.25rem;
+  border: 1px dashed var(--border);
+  padding: 0.75rem 1rem;
+  background: #080808;
+}
+
+.debug-panel summary {
+  cursor: pointer;
+  color: var(--amber);
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.debug-meta {
+  color: #888;
+  font-size: 0.82rem;
+  margin: 0.75rem 0 0;
+}
+
+.debug-compare {
+  margin-bottom: 0;
 }

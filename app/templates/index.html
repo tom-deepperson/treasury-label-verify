@@ -13,7 +13,7 @@
       <div class="status-bar">
         <span id="usage-count" data-role="{{ user_role }}">{% if unlimited %}TESTS: unlimited (developer){% else %}TESTS: {{ usage.used }}/{{ usage.max_tests }}{% endif %}</span>
         <span>ROLE: {{ user_role }}</span>
-        <span>PIPELINE: OCR -&gt; LLM -&gt; COMPARE</span>
+        <span id="pipeline-label">{% if user_role == 'developer' %}{% if use_llm %}PIPELINE: OCR -&gt; MAP -&gt; COMPARE{% else %}PIPELINE: OCR -&gt; COMPARE{% endif %}{% else %}LABEL VERIFY{% endif %}</span>
         <a href="/logout">LOGOUT</a>
       </div>
     </div>
@@ -34,12 +34,17 @@
           <div>
             <label for="net_contents">Net Contents</label>
             <input id="net_contents" name="net_contents" type="text" value="750 mL" required>
+            {% if use_llm %}
             <label for="llm_model">LLM Model</label>
             <select id="llm_model" name="llm_model">
               {% for model in models %}
               <option value="{{ model }}" {% if model == default_model %}selected{% endif %}>{{ model }}</option>
               {% endfor %}
             </select>
+            {% else %}
+            <p class="hint">OCR parser only (LLM disabled).</p>
+            <input type="hidden" id="llm_model" name="llm_model" value="ocr-parser">
+            {% endif %}
             <label for="image">Label Image</label>
             <input id="image" name="image" type="file" accept="image/*" required>
             <div id="image-preview" class="image-preview" hidden>
@@ -67,12 +72,17 @@
       <h2>BATCH VERIFY (SEQUENTIAL, 1 LABEL AT A TIME)</h2>
       <p class="hint">Upload multiple images plus a JSON applications file from samples/applications.json format. Each label consumes one test from quota.</p>
       <form id="batch-form">
+        {% if use_llm %}
         <label for="batch_llm_model">LLM Model</label>
         <select id="batch_llm_model" name="llm_model">
           {% for model in models %}
           <option value="{{ model }}" {% if model == default_model %}selected{% endif %}>{{ model }}</option>
           {% endfor %}
         </select>
+        {% else %}
+        <p class="hint">OCR parser only (LLM disabled).</p>
+        <input type="hidden" id="batch_llm_model" name="llm_model" value="ocr-parser">
+        {% endif %}
         <label for="batch_images">Label Images (multiple)</label>
         <input id="batch_images" name="images" type="file" accept="image/*" multiple required>
         <label for="applications_json">Applications JSON</label>

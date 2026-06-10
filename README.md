@@ -1,17 +1,51 @@
 # Treasury Label Verify
 
-Automated alcohol label verification prototype for the Treasury take-home assessment. Compares TTB-style label artwork against application fields using **EasyOCR (rotation-aware)**, a **user-selected LLM extraction phase**, and deterministic **field comparison rules**.
+Automated alcohol label verification prototype for the Treasury take-home assessment. Compares label artwork inside a **TTB application affix rectangle** against application fields using **Google Cloud Vision OCR** (with field-aware assembly), a deterministic **OCR parser**, optional **LLM field mapping**, and **rule-based comparison**.
 
 ## Features
 
-- Retro dark terminal UI
-- Rotation detection during OCR (0/90/180/270 sweep)
+- Retro dark terminal UI with rotation/skew metadata in results
+- Pluggable OCR backends (`vision`, `easyocr`, `paddle`) via `app/ocr/backends/`
+- **Google Cloud Vision** document OCR on Cloud Run; **EasyOCR** for local dev and rotation/skew sweeps
+- Field-aware text assembly (brand, class, ABV, net, warning) from OCR line geometry
+- Marketing/warehouse/form-noise filtering so batch numbers and DSP lines do not pollute reads
+- Rotation detection (0/90/180/270) and fine skew correction before the final Vision read
+- **31 synthetic affix-space samples** — dual stickers (brand + neck warning) on white canvas
 - Sequential batch processing (one label at a time)
-- Selectable LLM model: `gpt-4.1-mini`, `claude-haiku-4-5`, `gemini-3.5-flash`
-- Password-protected reviewer access
+- OCR parser when `USE_LLM=0`; default **LLM map-only** when `USE_LLM=1` (verbatim field ID, no corrections; `gemini-3.1-flash-live-preview`, `gpt-4.1-mini`, `claude-haiku-4-5`)
+- Password-protected reviewer access; developer login with unlimited quota
 - Hosted demo quota: **10 total verifications** (configurable)
+- Dev scripts (`scripts/dev.bat`, `dev.ps1`, `dev.sh`) for one-command local setup
+- OCR benchmark script to compare backends on the sample set
+
+## Architecture
+
+```
+Upload (affix rectangle PNG/JPG)
+  → preprocess + resize
+  → rotation/skew sweep (EasyOCR by default)
+  → final OCR read (Vision on Cloud Run)
+  → field assembly + noise filter
+  → LLM map or regex parser  →  compare rules  →  PASS / FAIL / REVIEW
+```
+
+See [APPROACH.md](APPROACH.md) for the EasyOCR → Vision evolution, sample-generation rationale, and trade-offs.
 
 ## Quick start (local)
+
+**Recommended:** develop and test locally, then deploy to Cloud Run only when ready (~12 min per deploy).
+
+```cmd
+cd treasury-label-verify
+scripts\dev.bat
+```
+
+PowerShell: `.\scripts\dev.ps1`  
+macOS/Linux: `./scripts/dev.sh`
+
+The dev script creates `.venv` and `.env` if missing, generates samples if needed, and starts the server with hot reload.
+
+Manual setup:
 
 ```bash
 git clone <repository-url>
@@ -28,29 +62,76 @@ uvicorn app.main:app --reload --port 8080
 
 Open `http://127.0.0.1:8080/login`
 
-Default local credentials (change in `.env`):
+Local credentials (from `.env`):
 
-- User: `treasury`
-- Pass: value of `REVIEWER_PASSWORD`
+- **Developer** (`DEVELOPER_USERNAME` / `DEVELOPER_PASSWORD`) — unlimited tests when `MAX_TESTS=0`
+- **Reviewer** (`REVIEWER_USERNAME` / `REVIEWER_PASSWORD`) — same as hosted demo
 
-Set `MAX_TESTS=0` in `.env` for unlimited local testing.
+First label verify may take 30–60s while OCR backends initialize. On Cloud Run, Vision API calls use the runtime service account (~$0.0015 per label).
+
+### Google Cloud Vision (local dev)
+
+Vision is the default backend (`OCR_BACKEND=vision`). Authenticate once:
+
+```bash
+gcloud auth application-default login
+gcloud config set project YOUR_PROJECT_ID
+```
+
+Ensure the Cloud Vision API is enabled and your account can call it. For offline/local-only dev without GCP credentials, set `OCR_BACKEND=easyocr` in `.env`.
+
+### Local workflow
+
+1. `scripts\dev.bat` — start server
+2. Load a sample → **VERIFY LABEL** — iterate on UI/OCR/compare changes (auto-reload on save)
+3. `pytest tests/ -q` — unit tests (no API keys needed for compare/parser tests)
+4. When satisfied: `scripts\deploy.bat` — push to Cloud Run
 
 ## Sample tests
 
-Synthetic labels and paired application JSON live in:
+**31** synthetic affix-space PNGs and paired application JSON:
 
-- `samples/labels/`
-- `samples/applications.json`
+- `samples/labels/` — rendered by `scripts/generate_samples.py`
+- `samples/applications.json` — expected field values per sample
+
+Each image is a **white application affix rectangle** (1800×950, no TTB form header) with **visible stickers** pasted inside: a brand label (mandatory fields) plus a separate **neck strip** for the government warning. Stickers can be rotated, skewed, colored, or noisy.
 
 Suggested manual checks:
 
 | File | Expected |
 |------|----------|
-| `old_tom_pass.png` | PASS |
+| `old_tom_pass.png` | PASS (brand sticker + neck warning sticker) |
 | `stones_throw_brand_case.png` | PASS (brand casing) |
 | `wrong_abv_fail.png` | FAIL (ABV) |
 | `bad_warning_fail.png` | FAIL (warning) |
-| `rotated_pass.png` | PASS or REVIEW with rotation metadata |
+| `rotated_pass.png` | PASS or REVIEW (sticker affixed at 90°) |
+| `rotated_180_pass.png` | PASS or REVIEW (sticker at 180°) |
+| `slight_skew_pass.png` | PASS (8° tilted sticker) |
+| `slight_skew_ccw_pass.png` | PASS (−12° tilted sticker) |
+| `wrong_net_fail.png` | FAIL (net contents) |
+| `brand_typo_fail.png` | FAIL (brand name typo) |
+| `class_typo_fail.png` | FAIL (class/type typo: Staight) |
+| `script_brand_pass.png` | PASS (script/cursive brand) |
+| `script_class_pass.png` | PASS or REVIEW (script class/type) |
+| `handwritten_style_pass.png` | PASS or REVIEW (handwritten-style font) |
+| `color_navy_gold_pass.png` | PASS or REVIEW (gold on navy sticker) |
+| `color_burgundy_cream_pass.png` | PASS or REVIEW (cream on burgundy sticker) |
+| `strip_wide_pass.png` | PASS (short/wide strip sticker) |
+| `photocopy_pass.png` | PASS or REVIEW (photocopied proof look) |
+| `warehouse_noise_pass.png` | PASS (warehouse/DSP/lot noise ignored) |
+| `noisy_marketing_pass.png` | PASS (extra marketing lines) |
+| `noisy_reordered_pass.png` | PASS (marketing + reordered lines) |
+| `noisy_serif_pass.png` | PASS (serif + marketing noise) |
+| `layout_center_brand_pass.png` | PASS (centered brand, scattered fields) |
+| `layout_scattered_pass.png` | PASS (ABV/net corners, brand center) |
+| `layout_footer_strip_pass.png` | PASS (mandatory strip above warning) |
+| `layout_scattered_net_fail.png` | FAIL (net contents in corner) |
+
+Regenerate synthetic samples anytime:
+
+```bash
+python scripts/generate_samples.py
+```
 
 ## API
 
@@ -60,7 +141,18 @@ Suggested manual checks:
 
 ## Deploy (GCP Cloud Run)
 
-**Important:** set `GOOGLE_CLOUD_PROJECT` in `.env` and ensure `gcloud` is authenticated with a Google account that can deploy to that project. If you use multiple Google accounts, see [DEPLOY_AUTH.md](DEPLOY_AUTH.md).
+**Important:** set `GOOGLE_CLOUD_PROJECT`, `SESSION_SECRET`, reviewer/developer passwords, and at least one LLM API key in `.env`. Ensure `gcloud` is authenticated with an account that can deploy to that project. If you use multiple Google accounts, see [DEPLOY_AUTH.md](DEPLOY_AUTH.md).
+
+The deploy script enables Cloud Vision, grants the Cloud Run runtime service account Vision access, and sets:
+
+| Cloud Run env | Value |
+|---------------|-------|
+| `OCR_BACKEND` | `vision` |
+| `ROTATION_OCR_BACKEND` | `easyocr` |
+| `USE_LLM` | `1` |
+| `MAX_TESTS` | `10` |
+| `WARM_OCR` | `1` |
+| `USAGE_STORE` | `file` |
 
 **Windows:**
 
@@ -88,14 +180,43 @@ The **10-test quota** applies to reviewer logins.
 
 Copy `.env.example` to `.env` and set API keys, session secret, and login credentials. See `.env.example` for all options.
 
+OCR-related settings:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_LLM` | `1` | `0` = OCR parser only; `1` = LLM map-only (verbatim field ID; requires API keys) |
+| `OCR_BACKEND` | `vision` | Primary OCR engine: `vision`, `easyocr`, or `paddle` |
+| `ROTATION_OCR_BACKEND` | `easyocr` | Local backend for rotation/skew sweeps when primary is `vision` |
+| `WARM_OCR` | `1` on deploy | Pre-load OCR backends at startup |
+
+Benchmark OCR backends against samples:
+
+```bash
+python scripts/generate_samples.py
+python scripts/benchmark_ocr.py --backends easyocr,vision
+```
+
+Reports are written to `data/ocr_benchmark/`.
+
 ## Tests
 
 ```bash
-pytest tests/test_compare.py -q
-pytest tests/test_rotation_ocr.py -q
+pytest tests/ -q
 ```
 
-Rotation OCR tests require generated samples and EasyOCR model download.
+Key suites:
+
+| Test file | Covers |
+|-----------|--------|
+| `test_compare.py` | Brand/class/ABV/net/warning rules, REVIEW paths |
+| `test_field_assembly.py` | Vision line grouping → structured fields |
+| `test_ocr_vision.py` | Vision backend document parsing (mocked) |
+| `test_rotation_ocr.py` | Rotation/skew on affix samples |
+| `test_form_samples.py` | Affix baseline samples |
+| `test_layout_scattered_brand.py` | Scattered layout brand extraction |
+| `test_ocr_benchmark.py` | Benchmark script smoke test |
+
+Rotation OCR tests use `OCR_BACKEND=easyocr` by default. Set `OCR_INTEGRATION=1` to run them against your configured primary backend.
 
 ## Submission form
 
@@ -105,9 +226,13 @@ Rotation OCR tests require generated samples and EasyOCR model download.
 
 ## Known limitations
 
-- OCR rotation sweep can exceed 5 seconds on CPU for large images
-- LLM extraction depends on configured API keys
+- Vision OCR requires GCP credentials locally (`gcloud auth application-default login`) or the Cloud Run service account on deploy
+- Rotation/skew sweeps use EasyOCR to avoid multiple Vision API calls per label; very unusual angles may still REVIEW
+- Color stickers and script fonts may REVIEW on EasyOCR-only local runs; Vision on Cloud Run is the intended production path
+- Uploads must be pre-cropped affix rectangles (not full F 5100.31 form scans)
+- LLM map phase is on by default (`USE_LLM=1`); set `USE_LLM=0` for parser-only offline dev
 - Prototype does not integrate with COLA
 - Label images are not persisted after processing
+- Hosted quota counter resets on redeploy when `USAGE_STORE=file`
 
-See [APPROACH.md](APPROACH.md) for design rationale.
+See [APPROACH.md](APPROACH.md) for design rationale and the EasyOCR → Vision learning path.

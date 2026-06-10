@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import authenticate, get_user_role, has_unlimited_tests, is_authenticated, session_secret
-from app.llm_service import available_models
+from app.llm_service import available_models, default_model, use_llm
 from app.pipeline import run_verification
 from app.schemas import ApplicationFields, UsageStatus
 from app.usage import UsageLimitExceeded, get_usage_status, reserve_tests
@@ -89,7 +89,8 @@ def index(request: Request):
             "user_role": get_user_role(request),
             "unlimited": unlimited,
             "models": models,
-            "default_model": models[0] if models else "gpt-4.1-mini",
+            "default_model": default_model(),
+            "use_llm": use_llm(),
             "gov_warning": GOV_WARNING_DEFAULT,
         },
     )
@@ -219,8 +220,8 @@ async def api_batch_stream(
 def warm_ocr():
     if os.getenv("WARM_OCR", "1") == "1":
         try:
-            from app.ocr_service import get_reader
+            from app.ocr.backends.factory import warm_backend
 
-            get_reader()
+            warm_backend()
         except Exception:
             pass

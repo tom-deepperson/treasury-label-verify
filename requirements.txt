@@ -9,6 +9,7 @@ pillow
 numpy
 opencv-python-headless
 easyocr
+google-cloud-vision
 httpx
 openai
 anthropic

@@ -75,11 +75,100 @@ function verdictBanner(status) {
   </div>`;
 }
 
+function isDeveloperView() {
+  const el = document.getElementById("usage-count");
+  return el?.dataset.role === "developer";
+}
+
+function rotationNoteHtml(rotation) {
+  if (rotation.was_upright !== false && !rotation.skew_correction_deg && !rotation.detected_rotation_deg) {
+    return "";
+  }
+  if (rotation.note) {
+    return `<p class="review-plain">${escapeHtml(rotation.note)}</p>`;
+  }
+  if (rotation.was_upright === false || rotation.skew_correction_deg || rotation.detected_rotation_deg) {
+    return `<p class="review-plain">This label was photographed at an angle. Text was adjusted before reading.</p>`;
+  }
+  return "";
+}
+
+function rotationMetaHtml(rotation) {
+  const parts = [];
+  if (rotation.detected_rotation_deg) {
+    parts.push(`Turned ${rotation.detected_rotation_deg}°`);
+  }
+  if (rotation.skew_correction_deg) {
+    const skew = rotation.skew_correction_deg;
+    const direction = skew > 0 ? "clockwise" : "counter-clockwise";
+    parts.push(`Straightened ${Math.abs(skew)}° ${direction}`);
+  }
+  if (!parts.length) {
+    parts.push("No rotation correction");
+  }
+  parts.push(`Upright: ${rotation.was_upright ? "Yes" : "No"}`);
+  return parts.join(" · ");
+}
+
+function failedFieldNames(fields) {
+  return (fields || []).filter((f) => f.status === "FAIL").map((f) => f.field_name);
+}
+
+function reviewFieldNames(fields) {
+  return (fields || []).filter((f) => f.status === "REVIEW").map((f) => f.field_name);
+}
+
+function overallSummaryHtml(result, developer) {
+  const rotation = result.rotation || {};
+  const status = result.overall_status;
+  const failed = failedFieldNames(result.fields);
+  const review = reviewFieldNames(result.fields);
+
+  let html = `<p class="result-meta ${statusClass(status)}">Overall${developer ? "" : " result"}: <strong>${escapeHtml(status)}</strong></p>`;
+
+  if (failed.length) {
+    html += `<p class="result-issue-list fail">Failed: ${failed.map((name) => escapeHtml(name)).join(", ")}</p>`;
+  }
+  if (review.length && status !== "PASS") {
+    html += `<p class="result-issue-list review">Needs review: ${review.map((name) => escapeHtml(name)).join(", ")}</p>`;
+  }
+
+  if (developer) {
+    html += `<p class="result-meta-secondary">${rotationMetaHtml(rotation)}</p>`;
+    if (rotation.note) {
+      html += `<p class="review">${escapeHtml(rotation.note)}</p>`;
+    }
+  } else {
+    html += rotationNoteHtml(rotation);
+  }
+
+  return html;
+}
+
+function debugPanelHtml(result, ocrText) {
+  const rotation = result.rotation || {};
+  const logLines = (result.log_lines || []).join("\n");
+  return `<details class="debug-panel">
+    <summary>Debug (developer)</summary>
+    <div class="compare-layout debug-compare">
+      <div class="compare-pane">
+        <h3>Raw OCR text</h3>
+        <pre class="ocr-text">${escapeHtml(ocrText)}</pre>
+      </div>
+      <div class="compare-pane">
+        <h3>Pipeline log</h3>
+        <pre class="ocr-text">${escapeHtml(logLines || "(no log)")}</pre>
+      </div>
+    </div>
+    <p class="debug-meta">${rotationMetaHtml(rotation)} · Model: ${escapeHtml(result.llm_model || "—")}</p>
+  </details>`;
+}
+
 function renderResult(result, imageUrl) {
   const container = document.getElementById("results");
   if (!container) return;
 
-  const rotation = result.rotation || {};
+  const developer = isDeveloperView();
   const ocrText = result.ocr_text || result.ocr_text_preview || "(no text detected)";
   const imageBlock = imageUrl
     ? `<img src="${escapeHtml(imageUrl)}" alt="Uploaded label image">`
@@ -97,40 +186,43 @@ function renderResult(result, imageUrl) {
     </tr>`;
   }
 
+  const imageSection = developer
+    ? `<div class="compare-layout">
+        <div class="compare-pane">
+          <h3>Original label</h3>
+          <div class="label-frame">${imageBlock}</div>
+        </div>
+        <div class="compare-pane">
+          <h3>Text read from label (OCR)</h3>
+          <pre class="ocr-text">${escapeHtml(ocrText)}</pre>
+        </div>
+      </div>`
+    : `<div class="label-only">
+        <h3 class="fields-heading">Label submitted</h3>
+        <div class="label-frame label-frame-large">${imageBlock}</div>
+      </div>`;
+
+  const metaLine = overallSummaryHtml(result, developer);
+
   const html = `<div class="panel result-panel">
     ${verdictBanner(result.overall_status)}
     <h2 class="result-title">${escapeHtml(result.filename)}</h2>
-    <p class="result-meta ${statusClass(result.overall_status)}">
-      Overall: <strong>${escapeHtml(result.overall_status)}</strong>
-      · Rotation: ${rotation.detected_rotation_deg ?? 0}°
-      · Upright: ${rotation.was_upright ? "Yes" : "No"}
-    </p>
-    ${rotation.note ? `<p class="review">${escapeHtml(rotation.note)}</p>` : ""}
-
-    <div class="compare-layout">
-      <div class="compare-pane">
-        <h3>Original label</h3>
-        <div class="label-frame">${imageBlock}</div>
-      </div>
-      <div class="compare-pane">
-        <h3>Text read from label (OCR)</h3>
-        <pre class="ocr-text">${escapeHtml(ocrText)}</pre>
-      </div>
-    </div>
-
+    ${metaLine}
+    ${imageSection}
     <h3 class="fields-heading">Field comparison</h3>
     <table class="fields-table">
       <thead>
         <tr>
           <th>Field</th>
-          <th>Application (expected)</th>
-          <th>Label (extracted)</th>
+          <th>Application</th>
+          <th>Read from label</th>
           <th>Result</th>
           <th>Notes</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
+    ${developer ? debugPanelHtml(result, ocrText) : ""}
   </div>`;
 
   container.innerHTML = html + container.innerHTML;
