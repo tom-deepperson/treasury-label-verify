@@ -146,12 +146,18 @@ async def api_verify(
         net_contents=net_contents.strip(),
         government_warning=government_warning.strip(),
     )
-    result = run_verification(
-        image_bytes=image_bytes,
-        application=application,
-        filename=image.filename or "upload",
-        llm_model=llm_model,
-    )
+    try:
+        result = run_verification(
+            image_bytes=image_bytes,
+            application=application,
+            filename=image.filename or "upload",
+            llm_model=llm_model,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Verification failed: {exc}",
+        ) from exc
     return JSONResponse(result.model_dump())
 
 

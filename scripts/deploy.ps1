@@ -84,8 +84,9 @@ Invoke-Gcloud run deploy $Service `
   --quiet `
   --allow-unauthenticated `
   --min-instances 1 `
-  --memory 2Gi `
+  --memory 4Gi `
   --cpu 2 `
+  --concurrency 1 `
   --timeout 300 `
   --set-env-vars "REVIEWER_USERNAME=$reviewerUser,MAX_TESTS=10,USAGE_STORE=file,WARM_OCR=1" `
   --set-env-vars "REVIEWER_PASSWORD=$env:REVIEWER_PASSWORD,SESSION_SECRET=$env:SESSION_SECRET" `

@@ -1,177 +1,88 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
   <meta charset="UTF-8">
-
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <title>label-verify v0.1</title>
-
   <link rel="stylesheet" href="/static/terminal.css">
-
 </head>
-
 <body>
-
   <div class="terminal">
-
     <div class="terminal-header">
-
       <h1>TTB LABEL VERIFY v0.1</h1>
-
       <div class="status-bar">
-
         <span id="usage-count" data-role="{{ user_role }}">{% if unlimited %}TESTS: unlimited (developer){% else %}TESTS: {{ usage.used }}/{{ usage.max_tests }}{% endif %}</span>
-
         <span>ROLE: {{ user_role }}</span>
-
         <span>PIPELINE: OCR -&gt; LLM -&gt; COMPARE</span>
-
         <a href="/logout">LOGOUT</a>
-
       </div>
-
     </div>
-
-
 
     <div class="panel">
-
       <h2>SINGLE LABEL VERIFY</h2>
-
       <p class="hint">Fill in the application fields, choose a label image, then click Verify. Processing often takes 45–90 seconds on the hosted demo.</p>
-
       <form id="verify-form">
-
         <div class="grid-2">
-
           <div>
-
             <label for="brand_name">Brand Name (application)</label>
-
             <input id="brand_name" name="brand_name" type="text" value="OLD TOM DISTILLERY" required>
-
             <label for="class_type">Class/Type</label>
-
             <input id="class_type" name="class_type" type="text" value="Kentucky Straight Bourbon Whiskey" required>
-
             <label for="alcohol_content">Alcohol Content</label>
-
             <input id="alcohol_content" name="alcohol_content" type="text" value="45% Alc./Vol. (90 Proof)" required>
-
           </div>
-
           <div>
-
             <label for="net_contents">Net Contents</label>
-
             <input id="net_contents" name="net_contents" type="text" value="750 mL" required>
-
             <label for="llm_model">LLM Model</label>
-
             <select id="llm_model" name="llm_model">
-
               {% for model in models %}
-
               <option value="{{ model }}" {% if model == default_model %}selected{% endif %}>{{ model }}</option>
-
               {% endfor %}
-
             </select>
-
             <label for="image">Label Image</label>
-
             <input id="image" name="image" type="file" accept="image/*" required>
-
             <div id="image-preview" class="image-preview" hidden>
-
               <img id="image-preview-img" alt="Selected label preview">
-
             </div>
-
           </div>
-
         </div>
-
         <label for="government_warning">Government Warning (application)</label>
-
         <textarea id="government_warning" name="government_warning" required>{{ gov_warning }}</textarea>
-
         <div class="form-actions">
-
           <label for="sample-select" class="inline-label">Load sample:</label>
-
           <select id="sample-select">
-
             <option value="">— choose a sample —</option>
-
           </select>
-
           <button class="btn btn-secondary" type="button" id="load-sample-single">LOAD SAMPLE</button>
-
           <button class="btn btn-primary" id="verify-submit" type="submit">VERIFY LABEL</button>
-
         </div>
-
       </form>
-
       <div id="verify-status" class="verify-status" aria-live="polite"></div>
-
     </div>
-
-
 
     <div id="results"></div>
 
-
-
     <div class="panel">
-
       <h2>BATCH VERIFY (SEQUENTIAL, 1 LABEL AT A TIME)</h2>
-
       <p class="hint">Upload multiple images plus a JSON applications file from samples/applications.json format. Each label consumes one test from quota.</p>
-
       <form id="batch-form">
-
         <label for="batch_llm_model">LLM Model</label>
-
         <select id="batch_llm_model" name="llm_model">
-
           {% for model in models %}
-
           <option value="{{ model }}" {% if model == default_model %}selected{% endif %}>{{ model }}</option>
-
           {% endfor %}
-
         </select>
-
         <label for="batch_images">Label Images (multiple)</label>
-
         <input id="batch_images" name="images" type="file" accept="image/*" multiple required>
-
         <label for="applications_json">Applications JSON</label>
-
         <textarea id="applications_json" name="applications_json" required>[]</textarea>
-
         <button class="btn btn-secondary" type="button" id="load-samples">LOAD SAMPLE JSON</button>
-
         <button class="btn btn-secondary" type="submit">UPLOAD BATCH</button>
-
       </form>
-
       <div id="batch-log" class="log">&gt; batch idle<span class="blink"></span></div>
-
     </div>
-
   </div>
-
   <script src="/static/terminal.js"></script>
-
 </body>
-
 </html>
-
-

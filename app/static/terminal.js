@@ -147,6 +147,17 @@ function findBatchImageUrl(filename) {
   return null;
 }
 
+async function readResponsePayload(resp) {
+  const raw = await resp.text();
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 180);
+    throw new Error(`Server returned ${resp.status} ${resp.statusText}${snippet ? `: ${snippet}` : ""}`);
+  }
+}
+
 async function runVerify(event) {
   event.preventDefault();
   const form = document.getElementById("verify-form");
@@ -175,12 +186,7 @@ async function runVerify(event) {
   try {
     const data = new FormData(form);
     const resp = await fetch("/api/verify", { method: "POST", body: data });
-    let payload;
-    try {
-      payload = await resp.json();
-    } catch {
-      throw new Error("Server returned an unexpected response.");
-    }
+    const payload = await readResponsePayload(resp);
 
     if (!resp.ok) {
       setVerifyStatus(`<strong>Verification failed:</strong> ${escapeHtml(payload.detail || resp.statusText)}`, "error");
@@ -236,7 +242,7 @@ async function runBatch(event) {
   appendLog(`> BATCH START (${imageCount} label(s), sequential)...`);
   const resp = await fetch("/api/batch/stream", { method: "POST", body: data });
   if (!resp.ok) {
-    const payload = await resp.json();
+    const payload = await readResponsePayload(resp);
     appendLog(`> ERROR: ${payload.detail || resp.statusText}`);
     return;
   }

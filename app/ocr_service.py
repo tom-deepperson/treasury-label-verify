@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import os
 import re
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ def _decode_image(image_bytes: bytes) -> np.ndarray:
     return image
 
 
-def _resize(image: np.ndarray, max_width: int = 1200) -> np.ndarray:
+def _resize(image: np.ndarray, max_width: int = 960) -> np.ndarray:
     height, width = image.shape[:2]
     if width <= max_width:
         return image
@@ -162,6 +163,7 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
 
     was_upright = best_angle == 0
     avg_conf = best_score / max(len(best_text), 1)
+    gc.collect()
     return OCRResult(
         text=merged_text,
         detected_rotation_deg=best_angle,
