@@ -58,6 +58,7 @@ PASS_SAMPLES = {
     "layout_center_brand_pass.png",
     "layout_scattered_pass.png",
     "layout_footer_strip_pass.png",
+    "ironwood_chaos_pass.png",
 }
 
 FAIL_SAMPLES = {

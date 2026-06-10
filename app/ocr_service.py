@@ -10,7 +10,7 @@ import numpy as np
 
 from app.ocr.backends.factory import get_backend, get_backend_name, get_rotation_backend_name, warm_backend
 from app.ocr.label_region import LabelRegionInfo, extract_label_region
-from app.ocr.field_assembly import assemble_label_text, assemble_warning_from_region
+from app.ocr.field_assembly import assemble_label_text, assemble_warning_from_region, raw_lines_from_document
 
 
 @dataclass
@@ -21,6 +21,7 @@ class OCRResult:
     was_upright: bool = True
     confidence: float = 0.0
     label_region: LabelRegionInfo | None = None
+    raw_lines: list[str] | None = None
 
 
 FINE_SKEW_ANGLES = (-15, -12, -9, -6, -3, 3, 6, 9, 12, 15)
@@ -55,6 +56,13 @@ def _preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
     return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+
+
+def _prepare_for_backend(image: np.ndarray, backend_name: str | None) -> np.ndarray:
+    """Vision reads color labels better; local EasyOCR uses grayscale CLAHE."""
+    if (backend_name or get_backend_name()) == "vision":
+        return image
+    return _preprocess_for_ocr(image)
 
 
 def _rotate_image(image: np.ndarray, angle: int) -> np.ndarray:
@@ -101,9 +109,33 @@ def _read_document(image: np.ndarray, *, backend_name: str | None = None, paragr
     return text, document.score(), document
 
 
-def _run_ocr(image: np.ndarray, *, paragraph: bool = False, backend_name: str | None = None) -> tuple[str, float]:
+def _run_ocr(
+    image: np.ndarray,
+    *,
+    paragraph: bool = False,
+    backend_name: str | None = None,
+) -> tuple[str, float]:
     text, score, _document = _read_document(image, backend_name=backend_name, paragraph=paragraph)
     return text, score
+
+
+def _run_ocr_with_document(
+    image: np.ndarray,
+    *,
+    paragraph: bool = False,
+    backend_name: str | None = None,
+):
+    return _read_document(image, backend_name=backend_name, paragraph=paragraph)
+
+
+def _extend_raw_lines(raw_lines: list[str], extra_text: str) -> list[str]:
+    seen = {line.lower() for line in raw_lines}
+    for line in extra_text.splitlines():
+        cleaned = normalize_whitespace(line)
+        if cleaned and cleaned.lower() not in seen:
+            raw_lines.append(cleaned)
+            seen.add(cleaned.lower())
+    return raw_lines
 
 
 def _crop_by_y_fraction(image: np.ndarray, y_start: float, y_end: float) -> np.ndarray:
@@ -115,65 +147,99 @@ def _crop_by_y_fraction(image: np.ndarray, y_start: float, y_end: float) -> np.n
 
 
 def _ocr_brand_candidates(image: np.ndarray) -> list[str]:
-    from app.parser import extract_abv_value, is_volume_label_read
+    from app.parser import (
+        _extract_distillery_brand,
+        _looks_like_class_prefix_not_brand,
+        extract_abv_value,
+        is_volume_label_read,
+    )
+    from app.ocr.noise import is_batch_lot_line
 
     candidates: list[str] = []
-    for y_start, y_end in ((0.0, 0.24), (0.30, 0.72)):
+    seen: set[str] = set()
+    for y_start, y_end in ((0.0, 0.24), (0.30, 0.72), (0.38, 0.58)):
         crop = _crop_by_y_fraction(image, y_start, y_end)
         if crop.size == 0:
             continue
         crop = cv2.resize(crop, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-        crop = _preprocess_for_ocr(crop)
+        crop = _prepare_for_backend(crop, get_backend_name())
         region_text, _ = _run_ocr(crop)
         for line in region_text.splitlines():
             line = line.strip()
             if not line:
                 continue
+            key = line.lower()
+            if key in seen:
+                continue
+            seen.add(key)
             if is_volume_label_read(line) or extract_abv_value(line) is not None:
                 continue
             if "government warning" in line.lower():
+                continue
+            if is_batch_lot_line(line) or _looks_like_class_prefix_not_brand(line):
+                continue
+            distillery = _extract_distillery_brand(line)
+            if distillery:
+                candidates.append(distillery)
                 continue
             candidates.append(line)
     return candidates
 
 
 def improve_brand_line(text: str, image: np.ndarray, application_brand: str) -> str:
-    from app.parser import brand_similarity, label_brand_from_ocr
+    from app.parser import (
+        _BRAND_DISTILLERY_HINTS,
+        brand_similarity,
+        label_brand_from_ocr,
+        _looks_like_class_prefix_not_brand,
+    )
 
     lines = [line for line in text.splitlines() if line.strip()]
     if not lines:
         return text
 
     current = label_brand_from_ocr(text) or lines[0].strip()
+    if _looks_like_class_prefix_not_brand(current):
+        current = ""
     best = current
-    best_score = brand_similarity(application_brand, current)
+    best_score = brand_similarity(application_brand, current) if current else 0.0
 
     for candidate in _ocr_brand_candidates(image):
         score = brand_similarity(application_brand, candidate)
+        if any(hint in candidate.lower() for hint in _BRAND_DISTILLERY_HINTS):
+            score = min(1.0, score + 0.08)
         if score > best_score:
             best = candidate
             best_score = score
 
-    if not best or best == current:
+    if not best or best_score < 0.45:
+        return text
+    if best == current and current:
         return text
 
     for index, line in enumerate(lines):
         if brand_similarity(application_brand, line.strip()) >= best_score * 0.85:
             lines[index] = best
             return "\n".join(lines)
-    lines[0] = best
+
+    if current and _looks_like_class_prefix_not_brand(lines[0]):
+        lines[0] = best
+    else:
+        lines.insert(0, best)
     return "\n".join(lines)
 
 
-def _ocr_warning_region(image: np.ndarray) -> str:
+def _ocr_warning_region(image: np.ndarray) -> tuple[str, list[str]]:
     crop = _crop_by_y_fraction(image, 0.52, 1.0)
     if crop.size == 0:
-        return ""
+        return "", []
     crop = cv2.resize(crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-    crop = _preprocess_for_ocr(crop)
-    backend = get_backend()
+    backend_name = get_backend_name()
+    crop = _prepare_for_backend(crop, backend_name)
+    backend = get_backend(backend_name)
     document = backend.read(crop, paragraph=True)
-    return assemble_warning_from_region(document) or assemble_label_text(document)
+    warning = assemble_warning_from_region(document) or assemble_label_text(document)
+    return warning, raw_lines_from_document(document)
 
 
 def _refine_skew(
@@ -184,7 +250,11 @@ def _refine_skew(
     cardinal_angle: int,
     backend_name: str,
 ) -> tuple[str, float, int]:
+    if backend_name == "vision" and _label_readability_score(text) >= 0.45:
+        return text, score, 0
     angles = FINE_SKEW_ANGLES if cardinal_angle == 0 else FINE_SKEW_ANGLES_CARDINAL
+    if backend_name == "vision":
+        angles = FINE_SKEW_ANGLES_CARDINAL
     best_text = text
     best_score = score
     best_skew = 0
@@ -193,8 +263,8 @@ def _refine_skew(
 
     for skew in angles:
         rotated = _rotate_arbitrary(image, skew)
-        preprocessed = _preprocess_for_ocr(rotated)
-        candidate_text, candidate_score = _run_ocr(preprocessed, backend_name=backend_name)
+        prepared = _prepare_for_backend(rotated, backend_name)
+        candidate_text, candidate_score = _run_ocr(prepared, backend_name=backend_name)
         combined = _rotation_selection_score(candidate_text, candidate_score)
         if combined > best_combined:
             best_combined = combined
@@ -312,7 +382,10 @@ def _looks_upright(text: str, ocr_score: float) -> bool:
         return True
     if readability >= 0.40 and re.search(r"government warning", text, re.I):
         return True
-    return readability >= 0.35 and ocr_score >= 200
+    text_len = max(len(normalize_whitespace(text)), 1)
+    avg_conf = ocr_score / text_len
+    # EasyOCR and Vision both expose conf*len via document.score(); normalize by length.
+    return readability >= 0.35 and (avg_conf >= 0.55 or ocr_score >= 180)
 
 
 def _merge_warning_text(full_text: str, warning_text: str) -> str:
@@ -348,9 +421,9 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
 
     image = _resize(_decode_image(image_bytes))
     image, label_region = extract_label_region(image)
-    preprocessed = _preprocess_for_ocr(image)
+    rotation_input = _prepare_for_backend(image, rotation_backend)
 
-    upright_text, upright_score = _run_ocr(preprocessed, backend_name=rotation_backend)
+    upright_text, upright_score = _run_ocr(rotation_input, backend_name=rotation_backend)
     best_angle = 0
     best_text = upright_text
     best_raw_score = upright_score
@@ -358,7 +431,7 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
 
     if not _looks_upright(upright_text, upright_score):
         for angle in (90, 180, 270):
-            rotated = _rotate_image(preprocessed, angle)
+            rotated = _rotate_image(rotation_input, angle)
             text, score = _run_ocr(rotated, backend_name=rotation_backend)
             combined = _rotation_selection_score(text, score)
             if combined > best_score:
@@ -368,12 +441,16 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
                 best_raw_score = score
 
     final_image = _rotate_image(image, best_angle)
-    final_preprocessed = _preprocess_for_ocr(final_image)
+    final_rotation_input = _prepare_for_backend(final_image, rotation_backend)
+    final_primary_input = _prepare_for_backend(final_image, primary_backend)
 
     if primary_backend == rotation_backend:
-        best_text, best_raw_score = _run_ocr(final_preprocessed, backend_name=primary_backend)
+        best_text, best_raw_score, primary_document = _run_ocr_with_document(
+            final_primary_input,
+            backend_name=primary_backend,
+        )
         best_text, best_raw_score, best_skew = _refine_skew(
-            final_preprocessed,
+            final_rotation_input,
             best_text,
             best_raw_score,
             cardinal_angle=best_angle,
@@ -381,26 +458,35 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
         )
     else:
         _, _, best_skew = _refine_skew(
-            final_preprocessed,
+            final_rotation_input,
             best_text,
             best_raw_score,
             cardinal_angle=best_angle,
             backend_name=rotation_backend,
         )
         if best_skew:
-            final_preprocessed = _preprocess_for_ocr(_rotate_arbitrary(final_preprocessed, best_skew))
-        best_text, best_raw_score = _run_ocr(final_preprocessed, backend_name=primary_backend)
+            skewed = _rotate_arbitrary(final_image, best_skew)
+            final_primary_input = _prepare_for_backend(skewed, primary_backend)
+        best_text, best_raw_score, primary_document = _run_ocr_with_document(
+            final_primary_input,
+            backend_name=primary_backend,
+        )
 
     if best_skew:
         final_image = _rotate_arbitrary(final_image, best_skew)
 
+    raw_lines = raw_lines_from_document(primary_document)
     merged_text = normalize_ocr_text(best_text)
     if not _warning_looks_complete(merged_text):
-        warning_text = normalize_ocr_text(_ocr_warning_region(final_image))
+        warning_text, warning_lines = _ocr_warning_region(final_image)
+        warning_text = normalize_ocr_text(warning_text)
         if warning_text and _label_readability_score(warning_text) >= _label_readability_score(merged_text):
             merged_text = normalize_ocr_text(_merge_warning_text(best_text, warning_text))
+            raw_lines = _extend_raw_lines(raw_lines, warning_text)
         else:
             merged_text = normalize_ocr_text(best_text)
+        if warning_lines:
+            raw_lines = _extend_raw_lines(raw_lines, "\n".join(warning_lines))
 
     was_upright = best_angle == 0 and best_skew == 0
     avg_conf = best_raw_score / max(len(best_text), 1)
@@ -412,4 +498,5 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
         was_upright=was_upright,
         confidence=avg_conf,
         label_region=label_region,
+        raw_lines=raw_lines,
     )

@@ -11,12 +11,20 @@ def get_backend_name() -> str:
     return os.getenv("OCR_BACKEND", "vision").strip().lower() or "vision"
 
 
+def _running_on_cloud_run() -> bool:
+    return bool(os.getenv("K_SERVICE", "").strip())
+
+
 def get_rotation_backend_name() -> str:
-    """Cheap local backend for rotation/skew sweeps when primary is cloud OCR."""
+    """Backend for rotation/skew sweeps. Local dev defaults to EasyOCR; Cloud Run uses Vision."""
     primary = get_backend_name()
-    if primary == "vision":
-        return os.getenv("ROTATION_OCR_BACKEND", "easyocr").strip().lower() or "easyocr"
-    return primary
+    if primary != "vision":
+        return primary
+    if _running_on_cloud_run():
+        # EasyOCR on Cloud Run CPU can exceed 20s per pass (14+ passes = multi-minute hangs).
+        return "vision"
+    configured = os.getenv("ROTATION_OCR_BACKEND", "easyocr").strip().lower()
+    return configured or "easyocr"
 
 
 def clear_backend_cache() -> None:
@@ -44,9 +52,10 @@ def get_backend(name: str | None = None) -> OcrBackend:
 
 
 def warm_backend() -> None:
-    get_backend().warm()
+    primary_name = get_backend_name()
+    get_backend(primary_name).warm()
     rotation_name = get_rotation_backend_name()
-    if rotation_name != get_backend_name():
+    if rotation_name != primary_name and not (_running_on_cloud_run() and rotation_name == "easyocr"):
         get_backend(rotation_name).warm()
 
 

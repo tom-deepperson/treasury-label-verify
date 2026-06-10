@@ -9,8 +9,10 @@ from app.parser import (
     brand_lines_from_texts,
     extract_abv_value,
     label_class_from_ocr,
+    net_contents_read_from_text,
     normalize_whitespace,
     parse_net_contents_ml,
+    trim_warning_text,
 )
 
 _CLASS_LINE_HINTS = ("whiskey", "bourbon", "whisky", "spirit", "vodka", "gin", "rum", "tequila", "wine")
@@ -43,6 +45,15 @@ def _sorted_lines(document: OcrDocument) -> list[OcrLine]:
     return sorted(document.lines, key=lambda line: (line.y_center, line.x_min))
 
 
+def raw_lines_from_document(document: OcrDocument) -> list[str]:
+    """Unparsed OCR lines in spatial order, before assembly filtering."""
+    return [
+        normalize_whitespace(line.text)
+        for line in _sorted_lines(document)
+        if line.text.strip()
+    ]
+
+
 def _extract_brand_lines(lines: list[OcrLine]) -> list[str]:
     texts = brand_lines_from_texts([line.text for line in lines])
     if texts:
@@ -72,8 +83,9 @@ def _extract_abv_line(lines: list[OcrLine]) -> str:
 
 def _extract_net_line(lines: list[OcrLine]) -> str:
     for line in lines:
-        if parse_net_contents_ml(line.text) is not None:
-            return line.text.strip()
+        snippet = net_contents_read_from_text(line.text)
+        if snippet:
+            return snippet
     return ""
 
 
@@ -101,7 +113,7 @@ def _extract_warning_block(lines: list[OcrLine], *, max_gap: float = 28.0) -> st
         if any(phrase in joined.lower() for phrase in _WARNING_END_PHRASES):
             break
 
-    return normalize_whitespace(" ".join(parts))
+    return trim_warning_text(normalize_whitespace(" ".join(parts)))
 
 
 def _extract_header_lines(lines: list[OcrLine], warning_text: str) -> list[str]:

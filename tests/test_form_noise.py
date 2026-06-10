@@ -30,6 +30,20 @@ def test_registry_noise_not_class():
     assert label_class_from_ocr(ocr) == "Kentucky Straight Bourbon Whiskey"
 
 
+def test_batch_lot_line_not_brand():
+    ocr = "\n".join(
+        [
+            "Batch RYE - 2028-009- Lot 18C Small Batch",
+            "Straight Rye Whiskey",
+            "IRONWOOD CANYON DISTILLING CO.",
+            "46% Alc./Vol. (92 Proof)",
+            "750 mL",
+        ]
+    )
+    assert label_brand_from_ocr(ocr) == "IRONWOOD CANYON DISTILLING CO."
+    assert label_class_from_ocr(ocr) == "Small Batch Straight Rye Whiskey"
+
+
 def test_form_bleed_filtered_from_brand():
     ocr = "\n".join(
         [

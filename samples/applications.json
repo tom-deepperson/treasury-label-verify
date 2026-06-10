@@ -246,5 +246,13 @@
     "net_contents": "750 mL",
     "government_warning": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
     "sample_file": "layout_scattered_net_fail.png"
+  },
+  {
+    "brand_name": "IRONWOOD CANYON DISTILLING CO.",
+    "class_type": "Small Batch Straight Rye Whiskey",
+    "alcohol_content": "46% Alc./Vol. (92 Proof)",
+    "net_contents": "750 mL",
+    "government_warning": "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink alcoholic beverages during pregnancy because of the risk of birth defects. (2) Consumption of alcoholic beverages impairs your ability to drive a car or operate machinery, and may cause health problems.",
+    "sample_file": "ironwood_chaos_pass.png"
   }
 ]

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-from app.compare import build_verification_result
-from app.llm_service import OCR_PARSER_MODEL, extract_fields, use_llm
+from app.compare import build_verification_result, compare_all, overall_status, apply_rescue_notes, rescue_field_keys
+from app.llm_service import OCR_PARSER_MODEL, extract_fields, rescue_failed_fields, use_llm
 from app.ocr_service import (
     extract_text_with_rotation,
     improve_brand_line,
@@ -35,6 +35,7 @@ def run_verification(
     if ocr.skew_correction_deg:
         final_image = _rotate_arbitrary(final_image, ocr.skew_correction_deg)
     ocr_text_raw = improve_brand_line(ocr.text, final_image, application.brand_name)
+    raw_lines = ocr.raw_lines or [line for line in ocr_text_raw.splitlines() if line.strip()]
     rotation_bits = [f"{ocr.detected_rotation_deg}°"]
     if ocr.skew_correction_deg:
         rotation_bits.append(f"skew {ocr.skew_correction_deg:+d}°")
@@ -50,21 +51,11 @@ def run_verification(
             )
 
     parse_started = time.perf_counter()
-    if use_llm():
-        log_lines.append(f"> LLM map phase [{llm_model}]...")
-    else:
-        log_lines.append("> Field parse [ocr_parser]...")
-    extracted, mode = extract_fields(ocr_text_raw, llm_model, application=application)
-    label_fields = extracted if mode == "llm_map" else None
-    if mode == "regex_fallback":
-        log_lines.append("> LLM map failed validation or unavailable; OCR parser fallback engaged")
-    if use_llm():
-        log_lines.append(f"> LLM map complete [{time.perf_counter() - parse_started:.1f}s]")
-    else:
-        log_lines.append(f"> Field parse complete [{time.perf_counter() - parse_started:.1f}s]")
+    log_lines.append("> Field parse [ocr_parser]...")
+    extracted, _mode, _parse_error = extract_fields(ocr_text_raw, llm_model, application=application)
+    log_lines.append(f"> Field parse complete [{time.perf_counter() - parse_started:.1f}s]")
 
-    result_model = llm_model if mode == "llm_map" else OCR_PARSER_MODEL
-
+    result_model = OCR_PARSER_MODEL
     ocr_text_display = clarify_brand_in_ocr_text(ocr_text_raw, application.brand_name)
 
     log_lines.append("> COMPARE phase...")
@@ -79,8 +70,33 @@ def run_verification(
         ocr_text=ocr_text_raw,
         ocr_text_display=ocr_text_display,
         log_lines=log_lines,
-        label_fields=label_fields,
+        label_fields=None,
     )
+
+    rescue_keys = rescue_field_keys(result.fields)
+    if use_llm() and rescue_keys:
+        rescue_started = time.perf_counter()
+        log_lines.append(f"> LLM rescue phase [{llm_model}] for {', '.join(rescue_keys)}...")
+        rescued, rescue_error = rescue_failed_fields(raw_lines, application, rescue_keys, llm_model)
+        if rescue_error:
+            log_lines.append(f"> LLM rescue failed: {rescue_error}")
+        elif rescued:
+            log_lines.append(f"> LLM rescue complete [{time.perf_counter() - rescue_started:.1f}s]")
+            result_model = llm_model
+            rescued_keys_applied = [key for key in rescue_keys if getattr(rescued, key, "").strip()]
+            fields = compare_all(
+                application,
+                extracted,
+                ocr_text=ocr_text_raw,
+                label_fields=rescued,
+            )
+            fields = apply_rescue_notes(fields, rescued_keys_applied)
+            result.fields = fields
+            result.overall_status = overall_status(fields)
+            result.llm_model = result_model
+        else:
+            log_lines.append("> LLM rescue found no valid reads")
+
     log_lines.append(f"> DONE [{result.overall_status}, total {time.perf_counter() - started:.1f}s]")
     result.log_lines = log_lines
     return result

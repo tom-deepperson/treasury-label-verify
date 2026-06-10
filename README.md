@@ -1,6 +1,6 @@
 # Treasury Label Verify
 
-Automated alcohol label verification prototype for the Treasury take-home assessment. Compares label artwork inside a **TTB application affix rectangle** against application fields using **Google Cloud Vision OCR** (with field-aware assembly), a deterministic **OCR parser**, optional **LLM field mapping**, and **rule-based comparison**.
+Automated alcohol label verification prototype for the Treasury take-home assessment. Compares label artwork inside a **TTB application affix rectangle** against application fields using **Google Cloud Vision OCR** (with field-aware assembly), a deterministic **OCR parser**, optional **LLM rescue on compare FAIL**, and **rule-based comparison**.
 
 ## Features
 
@@ -10,9 +10,9 @@ Automated alcohol label verification prototype for the Treasury take-home assess
 - Field-aware text assembly (brand, class, ABV, net, warning) from OCR line geometry
 - Marketing/warehouse/form-noise filtering so batch numbers and DSP lines do not pollute reads
 - Rotation detection (0/90/180/270) and fine skew correction before the final Vision read
-- **31 synthetic affix-space samples** — dual stickers (brand + neck warning) on white canvas
+- **32 synthetic affix-space samples** — dual stickers (brand + neck warning) on white canvas
 - Sequential batch processing (one label at a time)
-- OCR parser when `USE_LLM=0`; default **LLM map-only** when `USE_LLM=1` (verbatim field ID, no corrections; `gemini-3.1-flash-live-preview`, `gpt-4.1-mini`, `claude-haiku-4-5`)
+- OCR parser always runs first; optional **LLM rescue on compare FAIL or REVIEW** when `USE_LLM=1` (assigns OCR line numbers to unclear/failed fields only; text still comes from OCR, not the model)
 - Password-protected reviewer access; developer login with unlimited quota
 - Hosted demo quota: **10 total verifications** (configurable)
 - Dev scripts (`scripts/dev.bat`, `dev.ps1`, `dev.sh`) for one-command local setup
@@ -26,7 +26,8 @@ Upload (affix rectangle PNG/JPG)
   → rotation/skew sweep (EasyOCR by default)
   → final OCR read (Vision on Cloud Run)
   → field assembly + noise filter
-  → LLM map or regex parser  →  compare rules  →  PASS / FAIL / REVIEW
+  → OCR parser  →  compare rules  →  PASS / FAIL / REVIEW
+                                    ↳ LLM rescue on FAIL or REVIEW (USE_LLM=1)
 ```
 
 See [APPROACH.md](APPROACH.md) for the EasyOCR → Vision evolution, sample-generation rationale, and trade-offs.
@@ -89,7 +90,7 @@ Ensure the Cloud Vision API is enabled and your account can call it. For offline
 
 ## Sample tests
 
-**31** synthetic affix-space PNGs and paired application JSON:
+**32** synthetic affix-space PNGs and paired application JSON:
 
 - `samples/labels/` — rendered by `scripts/generate_samples.py`
 - `samples/applications.json` — expected field values per sample
@@ -126,6 +127,7 @@ Suggested manual checks:
 | `layout_scattered_pass.png` | PASS (ABV/net corners, brand center) |
 | `layout_footer_strip_pass.png` | PASS (mandatory strip above warning) |
 | `layout_scattered_net_fail.png` | FAIL (net contents in corner) |
+| `ironwood_chaos_pass.png` | PASS (teal/coral sticker, heavy warehouse/form/marketing noise) |
 
 Regenerate synthetic samples anytime:
 
@@ -184,7 +186,7 @@ OCR-related settings:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `USE_LLM` | `1` | `0` = OCR parser only; `1` = LLM map-only (verbatim field ID; requires API keys) |
+| `USE_LLM` | `1` | `0` = OCR parser only; `1` = LLM rescue on compare FAIL or REVIEW |
 | `OCR_BACKEND` | `vision` | Primary OCR engine: `vision`, `easyocr`, or `paddle` |
 | `ROTATION_OCR_BACKEND` | `easyocr` | Local backend for rotation/skew sweeps when primary is `vision` |
 | `WARM_OCR` | `1` on deploy | Pre-load OCR backends at startup |
@@ -230,7 +232,7 @@ Rotation OCR tests use `OCR_BACKEND=easyocr` by default. Set `OCR_INTEGRATION=1`
 - Rotation/skew sweeps use EasyOCR to avoid multiple Vision API calls per label; very unusual angles may still REVIEW
 - Color stickers and script fonts may REVIEW on EasyOCR-only local runs; Vision on Cloud Run is the intended production path
 - Uploads must be pre-cropped affix rectangles (not full F 5100.31 form scans)
-- LLM map phase is on by default (`USE_LLM=1`); set `USE_LLM=0` for parser-only offline dev
+- LLM rescue runs when compare FAILs or flags REVIEW (`USE_LLM=1`); set `USE_LLM=0` for parser-only offline dev
 - Prototype does not integrate with COLA
 - Label images are not persisted after processing
 - Hosted quota counter resets on redeploy when `USAGE_STORE=file`

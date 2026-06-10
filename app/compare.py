@@ -16,8 +16,17 @@ from app.parser import (
     ocr_normalize_for_match,
     parse_net_contents_ml,
     word_tokens,
+    _looks_like_class_prefix_not_brand,
 )
 from app.schemas import ApplicationFields, FieldComparison, FieldStatus, RotationInfo, VerificationResult
+
+FIELD_LABEL_TO_KEY = {
+    "Brand Name": "brand_name",
+    "Class/Type": "class_type",
+    "Alcohol Content": "alcohol_content",
+    "Net Contents": "net_contents",
+    "Government Warning": "government_warning",
+}
 
 WARNING_PART_MARKERS = ("(1)", "(2)")
 WARNING_CRITICAL_PHRASES = (
@@ -92,7 +101,9 @@ def compare_brand(app: str, ext: str, *, ocr_text: str = "", label_read: str | N
     """Compare application brand to what OCR read on the label (not LLM corrections)."""
     if label_read is None:
         label_read = label_brand_from_ocr(ocr_text) if ocr_text else ""
-    if not label_read:
+    if label_read and _looks_like_class_prefix_not_brand(label_read):
+        label_read = ""
+    if not label_read and ext and not _looks_like_class_prefix_not_brand(ext):
         label_read = ext
 
     app_n = normalize_brand(app)
@@ -374,6 +385,45 @@ def compare_government_warning(app: str, ext: str, *, ocr_text: str = "", label_
     )
 
 
+def _optional_label_read(label_fields: ApplicationFields | None, key: str) -> str | None:
+    if label_fields is None:
+        return None
+    value = getattr(label_fields, key, "").strip()
+    return value if value else None
+
+
+def failed_field_keys(fields: list[FieldComparison]) -> list[str]:
+    return [FIELD_LABEL_TO_KEY[field.field_name] for field in fields if field.status == "FAIL"]
+
+
+def rescue_field_keys(fields: list[FieldComparison]) -> list[str]:
+    """Field keys eligible for LLM rescue (compare FAIL or REVIEW)."""
+    return [
+        FIELD_LABEL_TO_KEY[field.field_name]
+        for field in fields
+        if field.status in ("FAIL", "REVIEW")
+    ]
+
+
+RESCUE_PASS_NOTE = "Parser could not read this field clearly; LLM located matching text in OCR."
+
+
+def apply_rescue_notes(
+    fields: list[FieldComparison],
+    rescued_keys: list[str],
+) -> list[FieldComparison]:
+    rescued = set(rescued_keys)
+    updated: list[FieldComparison] = []
+    for field in fields:
+        key = FIELD_LABEL_TO_KEY.get(field.field_name)
+        if key in rescued and field.status == "PASS":
+            note = RESCUE_PASS_NOTE if not field.notes else f"{field.notes} {RESCUE_PASS_NOTE}"
+            updated.append(field.model_copy(update={"notes": note}))
+        else:
+            updated.append(field)
+    return updated
+
+
 def compare_all(
     application: ApplicationFields,
     extracted: ApplicationFields,
@@ -382,32 +432,32 @@ def compare_all(
     label_fields: ApplicationFields | None = None,
 ) -> list[FieldComparison]:
     if label_fields is not None:
-        class_read = label_fields.class_type
+        class_read = label_fields.class_type or label_class_from_ocr(ocr_text)
         return [
             compare_brand(
                 application.brand_name,
                 extracted.brand_name,
                 ocr_text=ocr_text,
-                label_read=label_fields.brand_name,
+                label_read=_optional_label_read(label_fields, "brand_name"),
             ),
             compare_text_field("Class/Type", application.class_type, class_read),
             compare_abv(
                 application.alcohol_content,
                 extracted.alcohol_content,
                 ocr_text=ocr_text,
-                label_read=label_fields.alcohol_content,
+                label_read=_optional_label_read(label_fields, "alcohol_content"),
             ),
             compare_net_contents(
                 application.net_contents,
                 extracted.net_contents,
                 ocr_text=ocr_text,
-                label_read=label_fields.net_contents,
+                label_read=_optional_label_read(label_fields, "net_contents"),
             ),
             compare_government_warning(
                 application.government_warning,
                 extracted.government_warning,
                 ocr_text=ocr_text,
-                label_read=label_fields.government_warning,
+                label_read=_optional_label_read(label_fields, "government_warning"),
             ),
         ]
 

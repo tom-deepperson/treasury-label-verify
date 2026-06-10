@@ -18,6 +18,7 @@ _CLASS_PREFIX_HINTS = (
     "straight",
     "blended",
     "single",
+    "small batch",
     "indiana",
     "tennessee",
     "sour mash",
@@ -89,11 +90,20 @@ def extract_abv_value(text: str) -> float | None:
     return None
 
 
+_NET_CONTENTS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[mM][lL]\b", re.I)
+
+
 def parse_net_contents_ml(text: str) -> float | None:
-    match = re.search(r"(\d+(?:\.\d+)?)\s*m[lL]\b", text or "")
+    match = _NET_CONTENTS_RE.search(text or "")
     if not match:
         return None
     return float(match.group(1))
+
+
+def net_contents_read_from_text(text: str) -> str:
+    """Return the volume substring from OCR text, e.g. '750 ML' from a brand line."""
+    match = _NET_CONTENTS_RE.search(text or "")
+    return match.group(0) if match else ""
 
 
 def is_volume_label_read(text: str) -> bool:
@@ -119,6 +129,11 @@ def label_brand_from_ocr(ocr_text: str) -> str:
     if brand_parts:
         return normalize_whitespace(" ".join(brand_parts))
 
+    distillery_candidates = [_extract_distillery_brand(line) for line in lines]
+    distillery_candidates = [candidate for candidate in distillery_candidates if candidate]
+    if distillery_candidates:
+        return normalize_whitespace(max(distillery_candidates, key=len))
+
     for line in lines:
         if (
             not _is_marketing_line(line)
@@ -133,11 +148,14 @@ def label_brand_from_ocr(ocr_text: str) -> str:
 _CLASS_GEO_WORDS = ("kentucky", "indiana", "tennessee")
 
 from app.ocr.noise import MARKETING_HINTS as _MARKETING_HINTS
+from app.ocr.noise import is_batch_lot_line
+
+_BRAND_DISTILLERY_HINTS = ("distilling", "distillery", "distillers", " co.", " co ", " company", " llc", " inc")
 
 
 def _is_marketing_line(text: str) -> bool:
     lower = normalize_whitespace(text).lower()
-    return any(hint in lower for hint in _MARKETING_HINTS)
+    return is_batch_lot_line(text) or any(hint in lower for hint in _MARKETING_HINTS)
 
 
 def _is_class_fragment(text: str) -> bool:
@@ -191,6 +209,62 @@ def brand_lines_from_texts(lines: list[str]) -> list[str]:
     return brand_parts
 
 
+def _extract_distillery_brand(text: str) -> str:
+    """Pull a distillery-style brand from a line, including text after a warning tail."""
+    text = _CLARIFY_ANNOTATION.sub("", text.strip()).strip()
+    if not text:
+        return ""
+
+    lower = text.lower()
+    if "government warning" in lower:
+        tail = re.search(r"health problems\.?\s*(.+)$", text, re.I)
+        if not tail:
+            return ""
+        text = tail.group(1).strip(" .")
+        lower = text.lower()
+
+    if not text or _is_marketing_line(text) or _is_warning_fragment(text):
+        return ""
+    if _is_label_body_line(text) and not any(hint in lower for hint in _BRAND_DISTILLERY_HINTS):
+        return ""
+    if any(hint in lower for hint in _BRAND_DISTILLERY_HINTS):
+        return text
+    return ""
+
+
+def trim_warning_text(text: str) -> str:
+    """Keep only the canonical TTB warning block, dropping OCR tail noise."""
+    if not text:
+        return ""
+    joined = normalize_whitespace(text)
+    match = re.search(
+        r"(GOVERNMENT\s+WARNING\s*:.*?health problems\.?)",
+        joined,
+        re.I,
+    )
+    if match:
+        return normalize_whitespace(match.group(1))
+    return joined
+
+
+def _small_batch_prefix(text: str) -> str:
+    match = re.search(r"\bsmall\s+batch\b", text, re.I)
+    return match.group(0) if match else ""
+
+
+def _looks_like_class_prefix_not_brand(text: str) -> bool:
+    """True when OCR picked a class/type prefix instead of a distillery brand."""
+    cleaned = normalize_whitespace(text)
+    if not cleaned:
+        return True
+    lower = cleaned.lower()
+    if any(hint in lower for hint in _BRAND_DISTILLERY_HINTS):
+        return False
+    if re.fullmatch(r"small\s+batch", lower, flags=re.I):
+        return True
+    return _is_class_fragment(cleaned)
+
+
 def _normalize_class_type_order(text: str) -> str:
     tokens = text.split()
     if not tokens:
@@ -208,10 +282,15 @@ def _merge_class_type_lines(lines: list[str]) -> str:
         if not any(hint in lower for hint in _CLASS_LINE_HINTS):
             continue
 
+        if index > 0:
+            prefix = _small_batch_prefix(lines[index - 1])
+            if prefix and prefix.lower() not in line.lower():
+                return _normalize_class_type_order(normalize_whitespace(f"{prefix} {line}"))
+
         parts = [line]
         if index > 0 and not _is_label_body_line(lines[index - 1]):
             prev = lines[index - 1]
-            if any(hint in prev.lower() for hint in _CLASS_PREFIX_HINTS):
+            if any(hint in prev.lower() for hint in _CLASS_PREFIX_HINTS) and prev.lower() not in line.lower():
                 parts.insert(0, prev)
         if index + 1 < len(lines):
             nxt = lines[index + 1]
@@ -283,7 +362,11 @@ def parse_fields_from_text(text: str) -> ApplicationFields:
     lines = [normalize_whitespace(line) for line in text.splitlines() if line.strip()]
     joined = "\n".join(lines)
 
-    brand = label_brand_from_ocr(text) or (lines[0] if lines else "")
+    brand = label_brand_from_ocr(text) or ""
+    if not brand and lines:
+        fallback = lines[0]
+        if not _looks_like_class_prefix_not_brand(fallback):
+            brand = fallback
     class_type = label_class_from_ocr(text)
     alcohol = ""
     net_contents = ""
@@ -293,8 +376,10 @@ def parse_fields_from_text(text: str) -> ApplicationFields:
         lower = line.lower()
         if not alcohol and ("alc" in lower or "proof" in lower or "%" in line):
             alcohol = line
-        if not net_contents and re.search(r"\b\d+\s*m[lL]\b", line):
-            net_contents = line
+        if not net_contents:
+            snippet = net_contents_read_from_text(line)
+            if snippet:
+                net_contents = snippet
 
     warning_match = re.search(
         r"(GOVERNMENT\s+WARNING\s*:.*?health problems\.?)",
@@ -302,7 +387,7 @@ def parse_fields_from_text(text: str) -> ApplicationFields:
         re.I | re.S,
     )
     if warning_match:
-        warning = normalize_whitespace(warning_match.group(1))
+        warning = trim_warning_text(warning_match.group(1))
 
     return ApplicationFields(
         brand_name=brand,

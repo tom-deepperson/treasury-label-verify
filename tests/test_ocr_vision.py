@@ -83,3 +83,23 @@ def test_document_from_full_text_annotation_handles_empty():
     document = document_from_full_text_annotation(empty)
     assert document.lines == []
     assert document.full_text == ""
+
+
+def test_rotation_backend_uses_vision_on_cloud_run(monkeypatch):
+    from app.ocr.backends.factory import clear_backend_cache, get_rotation_backend_name
+
+    monkeypatch.setenv("K_SERVICE", "treasury-label-verify")
+    monkeypatch.setenv("OCR_BACKEND", "vision")
+    monkeypatch.setenv("ROTATION_OCR_BACKEND", "easyocr")
+    clear_backend_cache()
+    assert get_rotation_backend_name() == "vision"
+
+
+def test_rotation_backend_respects_easyocr_locally(monkeypatch):
+    from app.ocr.backends.factory import clear_backend_cache, get_rotation_backend_name
+
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    monkeypatch.setenv("OCR_BACKEND", "vision")
+    monkeypatch.setenv("ROTATION_OCR_BACKEND", "easyocr")
+    clear_backend_cache()
+    assert get_rotation_backend_name() == "easyocr"

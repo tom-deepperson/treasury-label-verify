@@ -642,6 +642,59 @@ def _generate_all(apps: list[dict]) -> None:
         **std,
     )
 
+    ironwood_app = dict(
+        brand_name="IRONWOOD CANYON DISTILLING CO.",
+        class_type="Small Batch Straight Rye Whiskey",
+        alcohol_content="46% Alc./Vol. (92 Proof)",
+        net_contents="750 mL",
+        government_warning=GOV,
+    )
+    ironwood_brand = build_brand_sticker(
+        brand="IRONWOOD CANYON DISTILLING CO.",
+        class_type="Small Batch Straight Rye Whiskey",
+        abv="46% Alc./Vol. (92 Proof)",
+        net="750 mL",
+        background="#0f4c47",
+        text_color="#f5f0e1",
+        blocks=[
+            TextBlock("DEPARTMENT OF THE TREASURY · FORM BLEED", (bw // 2, 10), font=("arial", 9), anchor="mt", color="#7fc8b8"),
+            TextBlock("750 mL", (16, 16), font=("impact", 15), color="#ffb347"),
+            TextBlock("46% Alc./Vol. (92 Proof)", (bw - 16, 16), font=("arial", 13), anchor="rt", color="#ffb347"),
+            TextBlock("Warehouse 7 · DSP-TX-88421", (16, 38), font=("consolas", 10), color="#7fc8b8"),
+            TextBlock("BW-4421-A · Plant Registry TX", (bw - 16, 38), font=("consolas", 10), anchor="rt", color="#7fc8b8"),
+            TextBlock("Batch RYE-2026-009 · Lot 18C", (bw // 2, 58), font=("arial", 9), anchor="mt", color="#7fc8b8"),
+            TextBlock("Bottled at Ironwood Canyon, TX 79001", (16, 76), font=("arial", 9), color="#7fc8b8"),
+            TextBlock("www.ironwoodcanyon.example", (bw - 16, 76), font=("arial", 9), anchor="rt", color="#7fc8b8"),
+            TextBlock("Small Batch", (18, 118), font=("georgia", 14), color="#c5e8dc"),
+            TextBlock("Straight Rye Whiskey", (18, 138), font=("georgia", 14), color="#c5e8dc"),
+            TextBlock("IRONWOOD CANYON", (bw // 2, 188), font=("impact", 34), anchor="mm", color="#ff6f59"),
+            TextBlock("DISTILLING CO.", (bw // 2, 228), font=("impact", 28), anchor="mm", color="#ff6f59"),
+            TextBlock("Scan QR code for cocktail recipes", (bw // 2, 268), font=("arial", 9), anchor="mt", color="#7fc8b8"),
+            TextBlock("Product of Texas · Enjoy Responsibly", (16, 292), font=("arial", 9), color="#7fc8b8"),
+            TextBlock("Distilled in the Texas High Plains", (bw - 16, 292), font=("arial", 9), anchor="rt", color="#7fc8b8"),
+            TextBlock("TTB F 5100.31 · Serial ref. only", (bw // 2, 312), font=("arial", 8), anchor="mt", color="#7fc8b8"),
+            TextBlock("750 mL NET WT · NOT FOR RESALE", (16, bh - 48), font=("arial", 9), color="#7fc8b8"),
+            TextBlock("46% Alc./Vol. (92 Proof)", (bw - 16, bh - 48), font=("arial", 12), anchor="rt", color="#ffb347"),
+        ],
+        art_bands=[
+            ArtBand(xy=(12, 96, bw - 12, 168), fill="#157a72"),
+            ArtBand(xy=(40, 160, bw - 40, 252), fill="#115e59"),
+            ArtBand(xy=(8, 278, bw - 8, 334), fill="#157a72"),
+        ],
+    )
+    ironwood_neck = build_neck_warning_sticker(
+        GOV,
+        background="#115e59",
+        text_color="#f4f1de",
+        warning_font=("arial", 10),
+    )
+    add_sample(
+        apps,
+        filename="ironwood_chaos_pass.png",
+        page=compose_affix_space(_layout_side_by_side(ironwood_brand, ironwood_neck)),
+        **ironwood_app,
+    )
+
 
 def main() -> None:
     LABELS.mkdir(parents=True, exist_ok=True)

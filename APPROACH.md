@@ -11,9 +11,30 @@ TTB compliance agents compare alcohol label artwork to application data. Much of
 - **EasyOCR** for local dev, rotation/skew sweeps, and offline testing
 - Optional **PaddleOCR** backend (pluggable via `OCR_BACKEND`)
 - OpenCV for preprocessing, rotation, and skew refinement
-- OpenAI, Anthropic, Google Gemini for optional LLM field mapping when `USE_LLM=1`
+- OpenAI, Anthropic, Google Gemini for optional LLM rescue when compare FAILs (`USE_LLM=1`)
 - Session cookie auth and file/Firestore usage counter
 - Docker + GCP Cloud Run deployment
+
+## Orchestration software
+
+Orchestration Software Used: **Cursor** (AI-assisted IDE)
+
+## Lessons learned
+
+Development iterations that shaped the final design:
+
+| Iteration | Lesson |
+|-----------|--------|
+| EasyOCR-only prototype | Prove end-to-end pipeline (rotate → parse → compare → deploy) before optimizing OCR accuracy |
+| Portrait → affix-space samples | Reviewers upload cropped F 5100.31 affix rectangles with dual stickers, not standalone portrait labels |
+| EasyOCR paragraph mode | Word-box vs paragraph-mode OCR output requires different line-join logic in the parser |
+| Cloud Run OOM | CPU-bound EasyOCR rotation sweeps exhaust default Cloud Run memory; cap preprocess resize, call `gc.collect()` after sweeps, and size the container appropriately |
+| Vision primary read | Managed Document OCR beats EasyOCR on color/script/contrast labels; use EasyOCR only for cheap orientation sweeps |
+| LLM rescue pivot | Parser-first keeps pass/fail deterministic; LLM runs only on FAIL/REVIEW fields, maps raw OCR line numbers verbatim, and cannot invent text OCR missed |
+| Secrets hygiene | Real `GOOGLE_CLOUD_PROJECT` and API keys live in `.env` only; docs and deploy scripts use placeholders |
+| Marketing noise | Warehouse/lot/DSP lines pollute brand reads; shared discard hints in `app/ocr/noise.py` are required |
+| Ironwood chaos sample | Scattered mandatory fields plus batch noise stress parser and assembly even when Vision reads all text |
+| Demo operations | Password gate and 10-test cap protect hosted API quotas; label images are never persisted |
 
 ## OCR evolution: EasyOCR to Google Vision
 
@@ -39,23 +60,24 @@ The first iteration used **EasyOCR only**. That was enough to prove the pipeline
 2. **Final OCR read** — Vision runs once on the deskewed image (`OCR_BACKEND=vision`).
 3. **Fallback path** — Set `OCR_BACKEND=easyocr` (or `paddle`) for fully offline dev without GCP credentials.
 
-`scripts/benchmark_ocr.py` compares backends against the 31 affix-space samples and writes reports to `data/ocr_benchmark/`.
+`scripts/benchmark_ocr.py` compares backends against the 32 affix-space samples and writes reports to `data/ocr_benchmark/`.
 
 ## Pipeline
 
 1. **Label region (passthrough):** uploads are already cropped to the white application affix rectangle; no TTB form header is present (`app/ocr/label_region.py`).
 2. **OCR phase:** preprocess (resize max 1600px, grayscale/contrast), evaluate orientation with the rotation backend, apply cardinal rotation and optional skew, then run the primary backend for the final text layer. Record `detected_rotation_deg`, `skew_correction_deg`, and `was_upright`.
 3. **Field assembly:** map OCR lines to structured regions (brand, class/type, ABV, net, warning) using spatial ordering and content heuristics; filter marketing/warehouse/form bleed via shared hints (`app/ocr/noise.py`).
-4. **Field map phase (default):** LLM maps OCR lines to structured fields using verbatim label text only (`USE_LLM=1`). Regex parser fallback when `USE_LLM=0` or map validation fails.
-5. **Compare phase (fixed rules):** deterministic pass/fail/review against application values using mapped or parsed label reads.
+4. **Field parse:** deterministic OCR parser extracts mandatory fields from assembled text.
+5. **Compare phase (fixed rules):** pass/fail/review against application values using parser reads from label OCR.
+6. **LLM rescue (optional, `USE_LLM=1`):** when any field FAILs or is flagged REVIEW, one LLM call assigns 1-based line numbers from **unparsed raw OCR lines** to those fields only; joined text is verbatim OCR. Compare rules re-run; status upgrades only if deterministic compare passes.
 
-Pass/fail comes from explicit compare rules on label text, not from LLM corrections.
+Pass/fail comes from explicit compare rules on label text, not from LLM corrections. LLM cannot recover text that OCR never captured.
 
 ## Realistic sample generation
 
 Early samples were standalone 900×1200 portrait labels (black on white). Reviewers actually upload a **scanned white affix rectangle** from TTB Form F 5100.31 with stickers pasted inside — not the full form with header fields.
 
-`scripts/generate_samples.py` now renders **31 paired samples**:
+`scripts/generate_samples.py` now renders **32 paired samples**:
 
 - **Canvas:** 1800×950 white affix space (no form header)
 - **Dual stickers:** brand label (720×520) + separate neck strip (780×220) for the government warning
@@ -118,7 +140,7 @@ Local development can disable quota via `MAX_TESTS=0`.
 | Field-aware assembly | Uses Vision paragraph boxes and layout hints | Unusual layouts may still need REVIEW |
 | Multi-angle + skew OCR | Meets rotated/skewed sticker requirement | Extra latency on first EasyOCR load locally |
 | Pluggable backends | EasyOCR/Paddle for offline dev and benchmarks | Three code paths to maintain |
-| Selectable LLM | Map-only field ID when enabled | On by default (`USE_LLM=1`); adds latency and key management |
+| Selectable LLM | Rescue-on-fail for messy layouts; zero LLM cost when parser passes | Only helps when text exists in OCR; adds latency on FAIL |
 | 10-test cap | Protects prototype resources | Limits reviewer batch size |
 | Affix-only uploads | Matches real reviewer workflow | Does not OCR full F 5100.31 form pages |
 

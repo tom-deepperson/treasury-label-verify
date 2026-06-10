@@ -81,6 +81,40 @@ def test_net_contents_uses_ocr_not_llm_correction():
     assert parse_net_contents_ml(result.extracted_value) == 700.0
 
 
+def test_parse_net_contents_ml_accepts_uppercase_ml():
+    assert parse_net_contents_ml("750 ML") == 750.0
+    assert parse_net_contents_ml("OLD TOM DISTILLERY 750 ML") == 750.0
+
+
+def test_compare_net_contents_passes_for_rescued_uppercase_ml():
+    result = compare_net_contents("750 mL", "750 mL", label_read="750 ML")
+    assert result.status == "PASS"
+
+
+def test_apply_rescue_notes_on_pass():
+    from app.compare import RESCUE_PASS_NOTE, apply_rescue_notes
+    from app.schemas import FieldComparison
+
+    fields = [
+        FieldComparison(
+            field_name="Net Contents",
+            application_value="750 mL",
+            extracted_value="750 ML",
+            status="PASS",
+            notes="",
+        )
+    ]
+    updated = apply_rescue_notes(fields, ["net_contents"])
+    assert RESCUE_PASS_NOTE in updated[0].notes
+
+
+def test_parser_finds_net_on_handwritten_brand_line():
+    ocr = "OLD TOM DISTILLERY 750 ML\nKentucky Straight Bourbon Whiskey\n45 % Alc./Vol. . ( 90 Proof )"
+    parsed = parse_fields_from_text(ocr)
+    assert parsed.net_contents == "750 ML"
+    assert parse_net_contents_ml(parsed.net_contents) == 750.0
+
+
 def test_bad_warning_title_case_from_ocr_fails():
     gov = (
         "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink "
