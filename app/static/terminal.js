@@ -81,11 +81,27 @@ function isDeveloperView() {
 }
 
 function rotationNoteHtml(rotation) {
-  if (rotation.was_upright !== false && !rotation.skew_correction_deg && !rotation.detected_rotation_deg) {
+  if (
+    rotation.was_upright !== false &&
+    !rotation.skew_correction_deg &&
+    !rotation.detected_rotation_deg &&
+    !rotation.brand_inverted &&
+    !rotation.per_sticker
+  ) {
     return "";
   }
   if (rotation.note) {
     return `<p class="review-plain">${escapeHtml(rotation.note)}</p>`;
+  }
+  if (rotation.per_sticker) {
+    const brandPart =
+      rotation.brand_rotation_deg === 0 ? "upright" : `rotated ${rotation.brand_rotation_deg}°`;
+    const warningPart =
+      rotation.warning_rotation_deg === 0 ? "upright" : `rotated ${rotation.warning_rotation_deg}°`;
+    return `<p class="review-plain">Brand sticker ${brandPart}; government warning strip ${warningPart}. Each sticker was read with its own orientation correction.</p>`;
+  }
+  if (rotation.brand_inverted) {
+    return `<p class="review-plain">Brand sticker is upside down while the government warning strip is upright. Each sticker was corrected independently before reading.</p>`;
   }
   if (rotation.was_upright === false || rotation.skew_correction_deg || rotation.detected_rotation_deg) {
     return `<p class="review-plain">This label was photographed at an angle. Text was adjusted before reading.</p>`;
@@ -95,16 +111,25 @@ function rotationNoteHtml(rotation) {
 
 function rotationMetaHtml(rotation) {
   const parts = [];
-  if (rotation.detected_rotation_deg) {
-    parts.push(`Turned ${rotation.detected_rotation_deg}°`);
-  }
-  if (rotation.skew_correction_deg) {
-    const skew = rotation.skew_correction_deg;
-    const direction = skew > 0 ? "clockwise" : "counter-clockwise";
-    parts.push(`Straightened ${Math.abs(skew)}° ${direction}`);
-  }
-  if (!parts.length) {
-    parts.push("No rotation correction");
+  if (rotation.per_sticker) {
+    parts.push(`Brand sticker: ${rotation.brand_rotation_deg || 0}°`);
+    parts.push(`Warning strip: ${rotation.warning_rotation_deg || 0}°`);
+    parts.push("Per-sticker correction");
+  } else {
+    if (rotation.detected_rotation_deg) {
+      parts.push(`Turned ${rotation.detected_rotation_deg}°`);
+    }
+    if (rotation.skew_correction_deg) {
+      const skew = rotation.skew_correction_deg;
+      const direction = skew > 0 ? "clockwise" : "counter-clockwise";
+      parts.push(`Straightened ${Math.abs(skew)}° ${direction}`);
+    }
+    if (rotation.brand_inverted) {
+      parts.push("Brand sticker inverted");
+    }
+    if (!parts.length) {
+      parts.push("No image rotation");
+    }
   }
   parts.push(`Upright: ${rotation.was_upright ? "Yes" : "No"}`);
   return parts.join(" · ");

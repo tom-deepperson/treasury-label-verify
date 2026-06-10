@@ -292,3 +292,18 @@ def test_serif_split_ocr_brand_and_class_pass():
     assert by_name["Alcohol Content"].status == "PASS"
     assert by_name["Net Contents"].status == "PASS"
     assert overall_status(fields) == "PASS"
+
+
+def test_rotation_note_per_sticker():
+    from app.compare import _rotation_note
+
+    note = _rotation_note(
+        0,
+        0,
+        was_upright=False,
+        per_sticker=True,
+        brand_rotation_deg=180,
+        warning_rotation_deg=0,
+    )
+    assert "Brand sticker rotated 180°" in note
+    assert "warning strip upright" in note

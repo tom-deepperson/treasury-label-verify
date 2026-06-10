@@ -98,14 +98,14 @@ Primary TTB context: [ttb.gov](https://www.ttb.gov)
 
 ## Rotation and skew handling
 
-Labels photographed off-angle are deskewed by:
+Dual-sticker affix layouts can have **independent orientations** per sticker (e.g. brand label pasted upside-down while the neck warning strip stays upright).
 
-1. Scoring OCR at 0/90/180/270 with the rotation backend
-2. Applying the best cardinal angle
-3. Optional fine skew (±15°) when readability improves
-4. Running the primary backend on the corrected image
+1. **Whole-image rotation** — score OCR at 0/90/180/270; apply when both stickers share the same orientation or the full affix was photographed turned.
+2. **Per-sticker correction** — when the brand and warning crops prefer incompatible angles (detected via contour-based sticker regions in `app/ocr/sticker_regions.py`), each sticker is rotated and OCR'd independently, then merged for parse/compare.
+3. **Fine skew** — optional ±15° refinement on the corrected crop when readability improves.
+4. **Primary read** — Vision (or configured backend) runs on the deskewed sticker crop or whole image.
 
-UI reports `detected_rotation_deg`, `skew_correction_deg`, and `was_upright`. Heavily skewed or very low-contrast photos may still require manual REVIEW.
+UI reports global `detected_rotation_deg` when the affix moves as a unit, or per-sticker `brand_rotation_deg` / `warning_rotation_deg` when stickers conflict. Heavily skewed or very low-contrast photos may still require manual REVIEW.
 
 ## Marketing and form noise
 

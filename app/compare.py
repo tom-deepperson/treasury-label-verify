@@ -479,7 +479,28 @@ def overall_status(fields: list[FieldComparison]) -> FieldStatus:
     return "PASS"
 
 
-def _rotation_note(rotation_deg: int, skew_correction_deg: int, was_upright: bool) -> str:
+def _rotation_note(
+    rotation_deg: int,
+    skew_correction_deg: int,
+    was_upright: bool,
+    *,
+    brand_inverted: bool = False,
+    per_sticker: bool = False,
+    brand_rotation_deg: int = 0,
+    warning_rotation_deg: int = 0,
+) -> str:
+    if per_sticker:
+        brand_part = "upright" if brand_rotation_deg == 0 else f"rotated {brand_rotation_deg}°"
+        warning_part = "upright" if warning_rotation_deg == 0 else f"rotated {warning_rotation_deg}°"
+        return (
+            f"Brand sticker {brand_part}; government warning strip {warning_part}. "
+            "Each sticker was read with its own orientation correction."
+        )
+    if brand_inverted and rotation_deg == 0 and skew_correction_deg == 0:
+        return (
+            "Brand sticker is upside down while the government warning strip is upright. "
+            "Each sticker was corrected independently before reading."
+        )
     if was_upright:
         return ""
     if rotation_deg in (90, 180, 270) and skew_correction_deg:
@@ -503,6 +524,10 @@ def build_verification_result(
     rotation_deg: int,
     skew_correction_deg: int = 0,
     was_upright: bool,
+    brand_inverted: bool = False,
+    per_sticker: bool = False,
+    brand_rotation_deg: int = 0,
+    warning_rotation_deg: int = 0,
     ocr_text: str,
     ocr_text_display: str | None = None,
     log_lines: list[str],
@@ -514,7 +539,15 @@ def build_verification_result(
         ocr_text=ocr_text,
         label_fields=label_fields,
     )
-    rotation_note = _rotation_note(rotation_deg, skew_correction_deg, was_upright)
+    rotation_note = _rotation_note(
+        rotation_deg,
+        skew_correction_deg,
+        was_upright,
+        brand_inverted=brand_inverted,
+        per_sticker=per_sticker,
+        brand_rotation_deg=brand_rotation_deg,
+        warning_rotation_deg=warning_rotation_deg,
+    )
     display_text = ocr_text_display if ocr_text_display is not None else ocr_text
 
     return VerificationResult(
@@ -524,6 +557,10 @@ def build_verification_result(
             detected_rotation_deg=rotation_deg,
             skew_correction_deg=skew_correction_deg,
             was_upright=was_upright,
+            brand_inverted=brand_inverted,
+            per_sticker=per_sticker,
+            brand_rotation_deg=brand_rotation_deg,
+            warning_rotation_deg=warning_rotation_deg,
             note=rotation_note,
         ),
         fields=fields,

@@ -105,8 +105,8 @@ Suggested manual checks:
 | `stones_throw_brand_case.png` | PASS (brand casing) |
 | `wrong_abv_fail.png` | FAIL (ABV) |
 | `bad_warning_fail.png` | FAIL (warning) |
-| `rotated_pass.png` | PASS or REVIEW (sticker affixed at 90°) |
-| `rotated_180_pass.png` | PASS or REVIEW (sticker at 180°) |
+| `rotated_pass.png` | PASS (brand sticker at 90°, neck strip upright; per-sticker correction) |
+| `rotated_180_pass.png` | PASS (brand at 180°, neck strip upright; per-sticker correction) |
 | `slight_skew_pass.png` | PASS (8° tilted sticker) |
 | `slight_skew_ccw_pass.png` | PASS (−12° tilted sticker) |
 | `wrong_net_fail.png` | FAIL (net contents) |
@@ -229,7 +229,7 @@ Rotation OCR tests use `OCR_BACKEND=easyocr` by default. Set `OCR_INTEGRATION=1`
 ## Known limitations
 
 - Vision OCR requires GCP credentials locally (`gcloud auth application-default login`) or the Cloud Run service account on deploy
-- Rotation/skew sweeps use EasyOCR to avoid multiple Vision API calls per label; very unusual angles may still REVIEW
+- Rotation/skew sweeps use EasyOCR to avoid multiple Vision API calls per label; per-sticker mode adds one extra Vision read when brand and warning orientations conflict
 - Color stickers and script fonts may REVIEW on EasyOCR-only local runs; Vision on Cloud Run is the intended production path
 - Uploads must be pre-cropped affix rectangles (not full F 5100.31 form scans)
 - LLM rescue runs when compare FAILs or flags REVIEW (`USE_LLM=1`); set `USE_LLM=0` for parser-only offline dev

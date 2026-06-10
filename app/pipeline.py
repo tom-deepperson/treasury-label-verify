@@ -34,16 +34,32 @@ def run_verification(
         final_image, _ = extract_label_region(final_image)
     if ocr.skew_correction_deg:
         final_image = _rotate_arbitrary(final_image, ocr.skew_correction_deg)
-    ocr_text_raw = improve_brand_line(ocr.text, final_image, application.brand_name)
+    brand_image = ocr.brand_crop if ocr.brand_crop is not None else final_image
+    ocr_text_raw = improve_brand_line(ocr.text, brand_image, application.brand_name)
     raw_lines = ocr.raw_lines or [line for line in ocr_text_raw.splitlines() if line.strip()]
-    rotation_bits = [f"{ocr.detected_rotation_deg}°"]
-    if ocr.skew_correction_deg:
-        rotation_bits.append(f"skew {ocr.skew_correction_deg:+d}°")
+    if ocr.per_sticker:
+        rotation_bits = [
+            f"brand {ocr.brand_rotation_deg}°",
+            f"warning {ocr.warning_rotation_deg}°",
+        ]
+    else:
+        rotation_bits = [f"{ocr.detected_rotation_deg}°"]
+        if ocr.skew_correction_deg:
+            rotation_bits.append(f"skew {ocr.skew_correction_deg:+d}°")
     log_lines.append(
         f"> OCR complete [rotation: {', '.join(rotation_bits)}, {time.perf_counter() - ocr_started:.1f}s]"
     )
-    if not ocr.was_upright:
-        if ocr.detected_rotation_deg:
+    if ocr.per_sticker:
+        log_lines.append(
+            f"> Per-sticker correction: brand {ocr.brand_rotation_deg}°, "
+            f"warning strip {ocr.warning_rotation_deg}°"
+        )
+    elif not ocr.was_upright:
+        if ocr.brand_inverted and not ocr.detected_rotation_deg and not ocr.skew_correction_deg:
+            log_lines.append(
+                "> Brand sticker appears inverted (warning strip upright); corrected per sticker"
+            )
+        elif ocr.detected_rotation_deg:
             log_lines.append(f"> Label was turned {ocr.detected_rotation_deg}° before reading")
         elif ocr.skew_correction_deg:
             log_lines.append(
@@ -67,6 +83,10 @@ def run_verification(
         rotation_deg=ocr.detected_rotation_deg,
         skew_correction_deg=ocr.skew_correction_deg,
         was_upright=ocr.was_upright,
+        brand_inverted=ocr.brand_inverted,
+        per_sticker=ocr.per_sticker,
+        brand_rotation_deg=ocr.brand_rotation_deg,
+        warning_rotation_deg=ocr.warning_rotation_deg,
         ocr_text=ocr_text_raw,
         ocr_text_display=ocr_text_display,
         log_lines=log_lines,

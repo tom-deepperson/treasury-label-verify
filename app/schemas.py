@@ -28,6 +28,10 @@ class RotationInfo(BaseModel):
     detected_rotation_deg: int
     skew_correction_deg: int = 0
     was_upright: bool
+    brand_inverted: bool = False
+    per_sticker: bool = False
+    brand_rotation_deg: int = 0
+    warning_rotation_deg: int = 0
     note: str = ""
 
 

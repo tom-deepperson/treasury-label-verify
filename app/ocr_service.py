@@ -4,6 +4,7 @@ import gc
 import os
 import re
 from dataclasses import dataclass
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -11,6 +12,17 @@ import numpy as np
 from app.ocr.backends.factory import get_backend, get_backend_name, get_rotation_backend_name, warm_backend
 from app.ocr.label_region import LabelRegionInfo, extract_label_region
 from app.ocr.field_assembly import assemble_label_text, assemble_warning_from_region, raw_lines_from_document
+from app.ocr.sticker_regions import StickerRegion, discover_sticker_regions
+
+
+@dataclass
+class StickerOCRResult:
+    role: Literal["brand", "warning"]
+    text: str
+    raw_lines: list[str]
+    rotation_deg: int
+    skew_deg: int
+    corrected_crop: np.ndarray | None = None
 
 
 @dataclass
@@ -19,9 +31,18 @@ class OCRResult:
     detected_rotation_deg: int
     skew_correction_deg: int = 0
     was_upright: bool = True
+    brand_inverted: bool = False
+    per_sticker: bool = False
+    brand_rotation_deg: int = 0
+    warning_rotation_deg: int = 0
     confidence: float = 0.0
     label_region: LabelRegionInfo | None = None
     raw_lines: list[str] | None = None
+    brand_crop: np.ndarray | None = None
+
+
+_BRAND_REGION_X_END = 0.48
+_BRAND_REGION_Y_END = 0.72
 
 
 FINE_SKEW_ANGLES = (-15, -12, -9, -6, -3, 3, 6, 9, 12, 15)
@@ -144,6 +165,14 @@ def _crop_by_y_fraction(image: np.ndarray, y_start: float, y_end: float) -> np.n
     bottom = int(height * y_end)
     crop = image[top:bottom, :]
     return crop if crop.size else image[:0]
+
+
+def _crop_by_x_fraction(image: np.ndarray, x_start: float, x_end: float) -> np.ndarray:
+    width = image.shape[1]
+    left = int(width * x_start)
+    right = int(width * x_end)
+    crop = image[:, left:right]
+    return crop if crop.size else image[:, :0]
 
 
 def _ocr_brand_candidates(image: np.ndarray) -> list[str]:
@@ -376,16 +405,130 @@ def _rotation_selection_score(text: str, ocr_score: float) -> float:
     return ocr_score * (0.25 + 0.75 * readability)
 
 
-def _looks_upright(text: str, ocr_score: float) -> bool:
-    readability = _label_readability_score(text)
-    if readability >= 0.55:
-        return True
-    if readability >= 0.40 and re.search(r"government warning", text, re.I):
-        return True
-    text_len = max(len(normalize_whitespace(text)), 1)
-    avg_conf = ocr_score / text_len
-    # EasyOCR and Vision both expose conf*len via document.score(); normalize by length.
-    return readability >= 0.35 and (avg_conf >= 0.55 or ocr_score >= 180)
+def _best_cardinal_rotation(
+    crop: np.ndarray,
+    *,
+    rotation_backend: str,
+) -> tuple[int, float, str]:
+    """Return best 0/90/180/270 angle and score for a sticker crop."""
+    enlarged = cv2.resize(crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    prepared = _prepare_for_backend(enlarged, rotation_backend)
+    upright_text, upright_score = _run_ocr(prepared, backend_name=rotation_backend)
+    best_angle = 0
+    best_text = upright_text
+    best_score = _rotation_selection_score(upright_text, upright_score)
+
+    for angle in (90, 180, 270):
+        rotated = _rotate_image(prepared, angle)
+        text, score = _run_ocr(rotated, backend_name=rotation_backend)
+        combined = _rotation_selection_score(text, score)
+        if combined > best_score:
+            best_score = combined
+            best_text = text
+            best_angle = angle
+
+    return best_angle, best_score, best_text
+
+
+def _sticker_regions_for_image(image: np.ndarray) -> list[StickerRegion]:
+    regions = discover_sticker_regions(image)
+    if len(regions) >= 2:
+        return regions
+    brand_crop = _crop_by_x_fraction(image, 0.0, _BRAND_REGION_X_END)
+    warning_crop = _crop_by_x_fraction(image, _BRAND_REGION_X_END, 1.0)
+    height, width = image.shape[:2]
+    fallback: list[StickerRegion] = []
+    if brand_crop.size:
+        fallback.append(
+            StickerRegion(role="brand", bbox=(0, 0, int(width * _BRAND_REGION_X_END), height), crop=brand_crop)
+        )
+    if warning_crop.size:
+        fallback.append(
+            StickerRegion(
+                role="warning",
+                bbox=(int(width * _BRAND_REGION_X_END), 0, width, height),
+                crop=warning_crop,
+            )
+        )
+    return fallback or regions
+
+
+def _ocr_sticker_crop(
+    region: StickerRegion,
+    *,
+    primary_backend: str,
+    rotation_backend: str,
+) -> StickerOCRResult:
+    best_angle, _, _ = _best_cardinal_rotation(region.crop, rotation_backend=rotation_backend)
+    corrected = _rotate_image(region.crop, best_angle)
+    enlarged = cv2.resize(corrected, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+    rotation_input = _prepare_for_backend(enlarged, rotation_backend)
+    primary_input = _prepare_for_backend(enlarged, primary_backend)
+
+    if primary_backend == rotation_backend:
+        text, score, document = _run_ocr_with_document(primary_input, backend_name=primary_backend)
+        text, score, skew = _refine_skew(
+            rotation_input,
+            text,
+            score,
+            cardinal_angle=best_angle,
+            backend_name=primary_backend,
+        )
+    else:
+        text, score = _run_ocr(rotation_input, backend_name=rotation_backend)
+        text, score, skew = _refine_skew(
+            rotation_input,
+            text,
+            score,
+            cardinal_angle=best_angle,
+            backend_name=rotation_backend,
+        )
+        if skew:
+            corrected = _rotate_arbitrary(corrected, skew)
+            enlarged = cv2.resize(corrected, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            primary_input = _prepare_for_backend(enlarged, primary_backend)
+        text, score, document = _run_ocr_with_document(primary_input, backend_name=primary_backend)
+
+    if skew:
+        corrected = _rotate_arbitrary(corrected, skew)
+
+    if region.role == "warning":
+        warning = assemble_warning_from_region(document) or text
+        raw_lines = raw_lines_from_document(document)
+        return StickerOCRResult(
+            role="warning",
+            text=warning,
+            raw_lines=raw_lines,
+            rotation_deg=best_angle,
+            skew_deg=skew,
+            corrected_crop=corrected,
+        )
+
+    raw_lines = raw_lines_from_document(document)
+    return StickerOCRResult(
+        role="brand",
+        text=text,
+        raw_lines=raw_lines,
+        rotation_deg=best_angle,
+        skew_deg=skew,
+        corrected_crop=corrected,
+    )
+
+
+def _merge_sticker_results(brand: StickerOCRResult, warning: StickerOCRResult) -> tuple[str, list[str]]:
+    brand_text = normalize_ocr_text(brand.text)
+    warning_text = normalize_ocr_text(warning.text)
+    if warning_text:
+        merged = normalize_ocr_text(_merge_warning_text(brand_text, warning_text))
+    else:
+        merged = brand_text
+    raw_lines = list(brand.raw_lines)
+    seen = {line.lower() for line in raw_lines}
+    for line in warning.raw_lines:
+        if line.lower() not in seen:
+            raw_lines.append(line)
+            seen.add(line.lower())
+    return merged, raw_lines
 
 
 def _merge_warning_text(full_text: str, warning_text: str) -> str:
@@ -398,8 +541,74 @@ def _merge_warning_text(full_text: str, warning_text: str) -> str:
     full_match = re.search(r"GOVERNMENT\s+WARNING\s*:", full_text, re.I)
     if full_match:
         prefix = full_text[: full_match.start()].rstrip()
-        return f"{prefix}\n{warning_body}".strip() if prefix else warning_body
-    return f"{full_text.rstrip()}\n{warning_body}".strip()
+        header = prefix or full_text.split("GOVERNMENT WARNING")[0].strip()
+        header_lines = [line.strip() for line in header.splitlines() if line.strip()]
+        if header_lines:
+            return "\n".join(header_lines + [warning_body]).strip()
+        return warning_body
+    header_lines = [line.strip() for line in full_text.splitlines() if line.strip()]
+    if header_lines:
+        return "\n".join(header_lines + [warning_body]).strip()
+    return warning_body
+
+
+def _sticker_orientation_conflict(
+    image: np.ndarray,
+    *,
+    rotation_backend: str,
+) -> tuple[bool, int, int]:
+    """True when brand and warning stickers prefer incompatible orientations."""
+    regions = _sticker_regions_for_image(image)
+    brand_region = next((region for region in regions if region.role == "brand"), None)
+    warning_region = next((region for region in regions if region.role == "warning"), None)
+    if not brand_region or not warning_region:
+        return False, 0, 0
+
+    brand_angle, brand_score, _ = _best_cardinal_rotation(brand_region.crop, rotation_backend=rotation_backend)
+    warning_angle, warning_score, _ = _best_cardinal_rotation(
+        warning_region.crop,
+        rotation_backend=rotation_backend,
+    )
+    if brand_angle == warning_angle:
+        return False, brand_angle, warning_angle
+
+    # Primary case: warning strip upright while brand sticker reads best rotated.
+    if warning_angle == 0 and brand_angle in (90, 180, 270):
+        upright_only = cv2.resize(brand_region.crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        upright_only = _prepare_for_backend(upright_only, rotation_backend)
+        upright_text, upright_raw = _run_ocr(upright_only, backend_name=rotation_backend)
+        upright_score = _rotation_selection_score(upright_text, upright_raw)
+        if brand_score > upright_score + 0.05:
+            return True, brand_angle, warning_angle
+
+    return False, brand_angle, warning_angle
+
+
+def _run_per_sticker_ocr(
+    image: np.ndarray,
+    *,
+    primary_backend: str,
+    rotation_backend: str,
+) -> tuple[StickerOCRResult, StickerOCRResult, str, list[str]]:
+    regions = _sticker_regions_for_image(image)
+    brand_region = next(region for region in regions if region.role == "brand")
+    warning_region = next(region for region in regions if region.role == "warning")
+
+    brand = _ocr_sticker_crop(brand_region, primary_backend=primary_backend, rotation_backend=rotation_backend)
+    warning = _ocr_sticker_crop(warning_region, primary_backend=primary_backend, rotation_backend=rotation_backend)
+    merged_text, raw_lines = _merge_sticker_results(brand, warning)
+    return brand, warning, merged_text, raw_lines
+
+
+def _looks_upright(text: str, ocr_score: float) -> bool:
+    readability = _label_readability_score(text)
+    if readability >= 0.55:
+        return True
+    if readability >= 0.40 and re.search(r"government warning", text, re.I):
+        return True
+    text_len = max(len(normalize_whitespace(text)), 1)
+    avg_conf = ocr_score / text_len
+    return readability >= 0.35 and (avg_conf >= 0.55 or ocr_score >= 180)
 
 
 def _parse_detection(detection):
@@ -416,6 +625,10 @@ def _group_detections_into_lines(detections: list):
 
 
 def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
+    return extract_text_per_sticker(image_bytes)
+
+
+def extract_text_per_sticker(image_bytes: bytes) -> OCRResult:
     primary_backend = get_backend_name()
     rotation_backend = get_rotation_backend_name()
 
@@ -439,6 +652,103 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
                 best_text = text
                 best_angle = angle
                 best_raw_score = score
+
+    conflict = False
+    uniform_sticker_angle = 0
+    if best_angle == 0:
+        conflict, brand_angle_hint, warning_angle_hint = _sticker_orientation_conflict(
+            image,
+            rotation_backend=rotation_backend,
+        )
+        if not conflict and brand_angle_hint == warning_angle_hint and brand_angle_hint != 0:
+            uniform_sticker_angle = brand_angle_hint
+
+    if uniform_sticker_angle:
+        best_angle = uniform_sticker_angle
+        best_skew = 0
+        final_image = _rotate_image(image, best_angle)
+        final_rotation_input = _prepare_for_backend(final_image, rotation_backend)
+        final_primary_input = _prepare_for_backend(final_image, primary_backend)
+        if primary_backend == rotation_backend:
+            best_text, best_raw_score, primary_document = _run_ocr_with_document(
+                final_primary_input,
+                backend_name=primary_backend,
+            )
+            best_text, best_raw_score, best_skew = _refine_skew(
+                final_rotation_input,
+                best_text,
+                best_raw_score,
+                cardinal_angle=best_angle,
+                backend_name=primary_backend,
+            )
+        else:
+            _, _, best_skew = _refine_skew(
+                final_rotation_input,
+                best_text,
+                best_raw_score,
+                cardinal_angle=best_angle,
+                backend_name=rotation_backend,
+            )
+            if best_skew:
+                skewed = _rotate_arbitrary(final_image, best_skew)
+                final_primary_input = _prepare_for_backend(skewed, primary_backend)
+            best_text, best_raw_score, primary_document = _run_ocr_with_document(
+                final_primary_input,
+                backend_name=primary_backend,
+            )
+        if best_skew:
+            final_image = _rotate_arbitrary(final_image, best_skew)
+        raw_lines = raw_lines_from_document(primary_document)
+        merged_text = normalize_ocr_text(best_text)
+        if not _warning_looks_complete(merged_text):
+            warning_text, warning_lines = _ocr_warning_region(final_image)
+            warning_text = normalize_ocr_text(warning_text)
+            if warning_text and _label_readability_score(warning_text) >= _label_readability_score(merged_text):
+                merged_text = normalize_ocr_text(_merge_warning_text(best_text, warning_text))
+                raw_lines = _extend_raw_lines(raw_lines, warning_text)
+            if warning_lines:
+                raw_lines = _extend_raw_lines(raw_lines, "\n".join(warning_lines))
+        was_upright = best_angle == 0 and best_skew == 0
+        avg_conf = best_raw_score / max(len(best_text), 1)
+        gc.collect()
+        return OCRResult(
+            text=merged_text,
+            detected_rotation_deg=best_angle,
+            skew_correction_deg=best_skew,
+            was_upright=was_upright,
+            brand_inverted=False,
+            per_sticker=False,
+            brand_rotation_deg=best_angle,
+            warning_rotation_deg=best_angle,
+            confidence=avg_conf,
+            label_region=label_region,
+            raw_lines=raw_lines,
+            brand_crop=None,
+        )
+
+    if conflict:
+        brand_result, warning_result, merged_text, raw_lines = _run_per_sticker_ocr(
+            image,
+            primary_backend=primary_backend,
+            rotation_backend=rotation_backend,
+        )
+        brand_inverted = brand_result.rotation_deg == 180 and warning_result.rotation_deg == 0
+        avg_conf = _label_readability_score(merged_text)
+        gc.collect()
+        return OCRResult(
+            text=merged_text,
+            detected_rotation_deg=0,
+            skew_correction_deg=0,
+            was_upright=False,
+            brand_inverted=brand_inverted,
+            per_sticker=True,
+            brand_rotation_deg=brand_result.rotation_deg,
+            warning_rotation_deg=warning_result.rotation_deg,
+            confidence=avg_conf,
+            label_region=label_region,
+            raw_lines=raw_lines,
+            brand_crop=brand_result.corrected_crop,
+        )
 
     final_image = _rotate_image(image, best_angle)
     final_rotation_input = _prepare_for_backend(final_image, rotation_backend)
@@ -496,7 +806,12 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
         detected_rotation_deg=best_angle,
         skew_correction_deg=best_skew,
         was_upright=was_upright,
+        brand_inverted=False,
+        per_sticker=False,
+        brand_rotation_deg=best_angle,
+        warning_rotation_deg=best_angle,
         confidence=avg_conf,
         label_region=label_region,
         raw_lines=raw_lines,
+        brand_crop=None,
     )
