@@ -75,7 +75,9 @@ def logout(request: Request):
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, _auth=Depends(require_auth)):
+def index(request: Request):
+    if not is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
     unlimited = has_unlimited_tests(request)
     usage = get_usage_status(unlimited=unlimited)
     models = available_models()
