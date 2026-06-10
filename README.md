@@ -14,13 +14,14 @@ Automated alcohol label verification prototype for the Treasury take-home assess
 ## Quick start (local)
 
 ```bash
-git clone https://github.com/tom-deepperson/treasury-label-verify.git
+git clone <repository-url>
 cd treasury-label-verify
 python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate   # macOS/Linux
+# Windows:  .venv\Scripts\activate
+# macOS/Linux:  source .venv/bin/activate
 pip install -r requirements.txt
-copy .env.example .env     # Windows: copy / macOS/Linux: cp
+# Windows:  copy .env.example .env
+# macOS/Linux:  cp .env.example .env
 python scripts/generate_samples.py
 uvicorn app.main:app --reload --port 8080
 ```
@@ -59,15 +60,19 @@ Suggested manual checks:
 
 ## Deploy (GCP Cloud Run)
 
-**Important:** set `GOOGLE_CLOUD_PROJECT` in `.env` and use the **personal** Google account that owns that project. If `gcloud` is on your business account, see [DEPLOY_AUTH.md](DEPLOY_AUTH.md).
+**Important:** set `GOOGLE_CLOUD_PROJECT` in `.env` and ensure `gcloud` is authenticated with a Google account that can deploy to that project. If you use multiple Google accounts, see [DEPLOY_AUTH.md](DEPLOY_AUTH.md).
+
+**Windows:**
 
 ```powershell
-cd treasury-label-verify
-# PowerShell:
 .\scripts\deploy.ps1
-# Command Prompt (cmd):
+```
+
+```cmd
 scripts\deploy.bat
 ```
+
+**macOS/Linux:** configure env vars from `.env`, then run `./scripts/deploy_cloud_run.sh` (see [DEPLOY_AUTH.md](DEPLOY_AUTH.md)).
 
 ## Reviewer access
 

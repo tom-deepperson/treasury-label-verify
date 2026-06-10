@@ -1,8 +1,9 @@
-# Deploy treasury-label-verify to Cloud Run (personal GCP project).
-# Prerequisite: gcloud config configuration treasury-personal activated
+# Deploy treasury-label-verify to Cloud Run.
+# Prerequisite: gcloud authenticated with an account that can deploy to GOOGLE_CLOUD_PROJECT in .env
 #   gcloud auth login
-#   gcloud config set account YOUR_PERSONAL_EMAIL@gmail.com
+#   gcloud config set account YOUR_GCP_ACCOUNT_EMAIL
 #   gcloud config set project $env:GOOGLE_CLOUD_PROJECT
+# See DEPLOY_AUTH.md if you use multiple Google accounts.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
@@ -103,5 +104,5 @@ Write-Host "Deployed: $url"
 Write-Host "Health:   $url/health"
 Write-Host "Login:    $url/login"
 Write-Host ""
-Write-Host "Developer: $devUser / (DEVELOPER_PASSWORD from .env)"
-Write-Host "Reviewer:  $reviewerUser / (REVIEWER_PASSWORD from .env - share with Treasury only)"
+Write-Host "Admin (unlimited quota): $devUser / (DEVELOPER_PASSWORD from .env)"
+Write-Host "Reviewer (quota applies):  $reviewerUser / (REVIEWER_PASSWORD from .env)"

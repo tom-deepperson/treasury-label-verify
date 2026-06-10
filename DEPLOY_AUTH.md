@@ -1,79 +1,94 @@
-# Deploy auth: personal vs business Google account
+# Deploy authentication (gcloud)
 
 Your Cloud Run project ID lives in **`.env`** as `GOOGLE_CLOUD_PROJECT` (see `.env.example`). Do not commit the real value.
 
-`gcloud` may default to your **business** account (`deep-person-licensing`, etc.) while the take-home project is on your **personal** account.
+If you use **multiple Google accounts**, `gcloud` may be signed in with an account that does not own the project in `.env`. Cloud Run deploy will fail until `gcloud` uses the account that has Owner or Editor access to that project.
 
-Cloud Run deploy will fail until `gcloud` uses the personal account that owns the project in `.env`.
+## Sign in with the correct account
 
-## One-time: add personal account to gcloud
+In your terminal (browser login required):
 
-In **your own terminal** (browser login required):
-
-```powershell
+```bash
 gcloud auth login
 ```
 
-Sign in with the **personal** Google account that owns your GCP project.
+Sign in with the Google account that owns or can administer your GCP project.
 
-List accounts:
+List active accounts:
 
-```powershell
+```bash
 gcloud auth list
 ```
 
 ## Recommended: separate gcloud configuration
 
-Keeps business and personal projects isolated.
+Use a dedicated configuration when this project uses a different account than your default:
 
-```powershell
-gcloud config configurations create treasury-personal
-gcloud config configurations activate treasury-personal
-gcloud config set account YOUR_PERSONAL_EMAIL@gmail.com
+```bash
+gcloud config configurations create treasury-label-verify
+gcloud config configurations activate treasury-label-verify
+gcloud config set account YOUR_GCP_ACCOUNT_EMAIL
 gcloud config set project YOUR_GCP_PROJECT_ID
 ```
 
 (`YOUR_GCP_PROJECT_ID` = value of `GOOGLE_CLOUD_PROJECT` in `.env`.)
 
-Switch back to business later:
+Switch back to another configuration later:
 
-```powershell
+```bash
 gcloud config configurations activate default
 ```
 
 ## Verify before deploy
 
-```powershell
+```bash
 gcloud config get-value account
 gcloud config get-value project
 ```
 
 Expected:
 
-- **account:** your personal email
+- **account:** the Google account with access to the project
 - **project:** matches `GOOGLE_CLOUD_PROJECT` in `.env`
 
 Quick access check:
 
-```powershell
+```bash
 gcloud projects describe YOUR_GCP_PROJECT_ID
 ```
 
-If you see permission errors, you are still on the wrong account.
+If you see permission errors, switch to the correct account or configuration.
 
 ## Deploy
 
 From the project root with `.env` filled in:
 
+**PowerShell (Windows):**
+
 ```powershell
-cd treasury-label-verify
 .\scripts\deploy.ps1
 ```
 
-Or run the commands in [README.md](README.md) manually after setting account/project.
+**Command Prompt (Windows):**
+
+```cmd
+scripts\deploy.bat
+```
+
+**bash (macOS/Linux):**
+
+```bash
+export PROJECT_ID="$GOOGLE_CLOUD_PROJECT"   # or source values from .env
+export REVIEWER_PASSWORD=...
+export SESSION_SECRET=...
+export DEVELOPER_PASSWORD=...
+./scripts/deploy_cloud_run.sh
+```
+
+Or run the commands in [README.md](README.md) manually after setting account and project.
 
 ## After deploy
 
-- Test with **developer** login (unlimited): `DEVELOPER_USERNAME` / `DEVELOPER_PASSWORD`
-- Share **reviewer** login with Treasury only: `treasury` / `REVIEWER_PASSWORD`
-- Form field 7: Cloud Run URL printed at end of deploy
+- Note the Cloud Run URL printed at the end of deploy (submission form field 7).
+- Share reviewer credentials (`REVIEWER_USERNAME` / `REVIEWER_PASSWORD`) with assessors as instructed.
+- Optional admin credentials (`DEVELOPER_USERNAME` / `DEVELOPER_PASSWORD`) bypass the hosted test quota for maintenance; keep them private.

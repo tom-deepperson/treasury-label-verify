@@ -42,7 +42,7 @@ Batch uploads are processed **sequentially, one label at a time**, with terminal
 Hosted demo uses:
 
 - Password gate (`REVIEWER_USERNAME` / `REVIEWER_PASSWORD`)
-- `MAX_TESTS=10` to prevent production misuse on personal API keys
+- `MAX_TESTS=10` to limit hosted demo usage and protect API quotas
 
 Local development can disable quota via `MAX_TESTS=0`.
 
@@ -66,7 +66,3 @@ Local development can disable quota via `MAX_TESTS=0`.
 - COLA integration
 - FedRAMP production controls
 - Long-term document retention policies
-
-## Author
-
-Thomas S. Tedone
