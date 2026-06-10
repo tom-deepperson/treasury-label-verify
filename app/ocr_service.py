@@ -74,6 +74,16 @@ def _sort_detections(detections: list) -> list:
     return sorted(detections, key=sort_key)
 
 
+def _parse_detection(detection) -> tuple[object, str, float]:
+    if len(detection) == 3:
+        box, text, conf = detection
+        return box, str(text), float(conf)
+    if len(detection) == 2:
+        box, text = detection
+        return box, str(text), 0.85
+    raise ValueError(f"Unexpected EasyOCR detection format (len={len(detection)})")
+
+
 def _run_ocr(image: np.ndarray, *, paragraph: bool = False) -> tuple[str, float]:
     reader = get_reader()
     detections = _sort_detections(reader.readtext(image, paragraph=paragraph))
@@ -81,11 +91,12 @@ def _run_ocr(image: np.ndarray, *, paragraph: bool = False) -> tuple[str, float]
         return "", 0.0
     lines = []
     confidences = []
-    for _box, text, conf in detections:
+    for detection in detections:
+        _box, text, conf = _parse_detection(detection)
         cleaned = text.strip()
         if cleaned:
             lines.append(cleaned)
-            confidences.append(float(conf))
+            confidences.append(conf)
     text = "\n".join(lines)
     avg_conf = sum(confidences) / len(confidences)
     score = avg_conf * max(len(text), 1)
