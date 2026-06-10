@@ -41,6 +41,23 @@ GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink
     assert "GOVERNMENT WARNING" in parsed.government_warning.upper()
 
 
+def test_warning_fuzzy_pass_on_ocr_noise():
+    gov = (
+        "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink "
+        "alcoholic beverages during pregnancy because of the risk of birth defects. "
+        "(2) Consumption of alcoholic beverages impairs your ability to drive a car or "
+        "operate machinery, and may cause health problems."
+    )
+    noisy = (
+        "GOVERNMENT WARNING: (1) According to the Surgeon General, women should not drink "
+        "alcoholic beverages during pregnancy because of the risk of birth defects. "
+        "(2) Consumption of alcoholic beverages impairs your ability to drive car or "
+        "operate machinery; and cause health problems_ may"
+    )
+    result = compare_government_warning(gov, noisy)
+    assert result.status in ("PASS", "REVIEW")
+
+
 def test_overall_status_fail_if_any_fail():
     app = ApplicationFields(
         brand_name="A",

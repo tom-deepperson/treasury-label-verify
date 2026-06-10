@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from app.compare import build_verification_result
 from app.llm_service import extract_fields
 from app.ocr_service import extract_text_with_rotation
@@ -13,17 +15,23 @@ def run_verification(
     filename: str,
     llm_model: str,
 ) -> VerificationResult:
+    started = time.perf_counter()
     log_lines: list[str] = []
     log_lines.append("> OCR phase starting...")
+    ocr_started = time.perf_counter()
     ocr = extract_text_with_rotation(image_bytes)
-    log_lines.append(f"> OCR complete [rotation: {ocr.detected_rotation_deg} deg]")
+    log_lines.append(
+        f"> OCR complete [rotation: {ocr.detected_rotation_deg} deg, {time.perf_counter() - ocr_started:.1f}s]"
+    )
     if not ocr.was_upright:
         log_lines.append("> REVIEW: label not upright; deskewed before extraction")
 
+    llm_started = time.perf_counter()
     log_lines.append(f"> LLM phase [{llm_model}]...")
     extracted, mode = extract_fields(ocr.text, llm_model)
     if mode == "regex_fallback":
         log_lines.append("> LLM unavailable or failed; regex parser fallback engaged")
+    log_lines.append(f"> LLM complete [{time.perf_counter() - llm_started:.1f}s]")
 
     log_lines.append("> COMPARE phase...")
     result = build_verification_result(
@@ -36,6 +44,6 @@ def run_verification(
         ocr_text=ocr.text,
         log_lines=log_lines,
     )
-    log_lines.append(f"> DONE [{result.overall_status}]")
+    log_lines.append(f"> DONE [{result.overall_status}, total {time.perf_counter() - started:.1f}s]")
     result.log_lines = log_lines
     return result

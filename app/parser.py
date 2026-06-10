@@ -58,7 +58,7 @@ def parse_fields_from_text(text: str) -> ApplicationFields:
             net_contents = line
 
     warning_match = re.search(
-        r"(GOVERNMENT WARNING:.*?(?:health problems\.|machinery, and may cause health problems\.))",
+        r"(GOVERNMENT WARNING:.*?health problems\.?)",
         joined,
         re.I | re.S,
     )

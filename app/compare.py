@@ -104,22 +104,57 @@ def compare_government_warning(app: str, ext: str) -> FieldComparison:
             status="REVIEW",
             notes="Warning not extracted from label",
         )
-    if "GOVERNMENT WARNING:" not in ext_n.upper():
+    if not re.match(r"^GOVERNMENT WARNING:", ext_n):
         return FieldComparison(
             field_name="Government Warning",
             application_value=app,
             extracted_value=ext,
             status="FAIL",
-            notes="Extracted warning missing GOVERNMENT WARNING: prefix in all caps form",
+            notes="Extracted warning must begin with GOVERNMENT WARNING: in all caps",
         )
-    status: FieldStatus = "PASS" if app_n == ext_n else "FAIL"
-    notes = "" if status == "PASS" else "Warning must match application text exactly after whitespace normalization"
+    if app_n == ext_n:
+        return FieldComparison(
+            field_name="Government Warning",
+            application_value=app,
+            extracted_value=ext,
+            status="PASS",
+            notes="",
+        )
+
+    overlap = _token_overlap(app, ext)
+    if overlap >= 0.88:
+        return FieldComparison(
+            field_name="Government Warning",
+            application_value=app,
+            extracted_value=ext,
+            status="PASS",
+            notes=f"Warning matches after OCR tolerance (token overlap {overlap:.2f})",
+        )
+
+    critical_phrases = (
+        "surgeon general",
+        "pregnancy",
+        "birth defects",
+        "impairs your ability",
+        "health problems",
+    )
+    ext_lower = ext_n.lower()
+    missing = [phrase for phrase in critical_phrases if phrase not in ext_lower]
+    if not missing and overlap >= 0.72:
+        return FieldComparison(
+            field_name="Government Warning",
+            application_value=app,
+            extracted_value=ext,
+            status="REVIEW",
+            notes=f"Warning text likely correct but OCR introduced errors (overlap {overlap:.2f})",
+        )
+
     return FieldComparison(
         field_name="Government Warning",
         application_value=app,
         extracted_value=ext,
-        status=status,
-        notes=notes,
+        status="FAIL",
+        notes=f"Warning text mismatch (token overlap {overlap:.2f})",
     )
 
 

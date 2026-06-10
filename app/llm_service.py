@@ -30,6 +30,11 @@ def _prompt(ocr_text: str) -> str:
     return f"""Extract alcohol label fields from OCR text. Return JSON only with keys:
 brand_name, class_type, alcohol_content, net_contents, government_warning
 
+Rules:
+- government_warning must be the full TTB warning block starting with "GOVERNMENT WARNING:"
+- Reconstruct missing words in the warning when OCR drops small words (for example "a", "and", "or")
+- Preserve the standard two-part warning wording even if OCR punctuation differs slightly
+
 OCR TEXT:
 {ocr_text}
 """

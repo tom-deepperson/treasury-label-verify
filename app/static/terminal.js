@@ -157,11 +157,20 @@ async function runVerify(event) {
   }
 
   const previewUrl = URL.createObjectURL(imageInput.files[0]);
+  const startedAt = Date.now();
+  let timerId = null;
   setVerifyLoading(true);
   setVerifyStatus(
-    `<strong>Verifying label…</strong> Reading the image and comparing fields. This usually takes 15–30 seconds. Please wait.`,
+    `<strong>Verifying label…</strong> Reading the image and comparing fields. On the hosted demo this often takes 45–90 seconds.`,
     "loading"
   );
+  timerId = window.setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    setVerifyStatus(
+      `<strong>Verifying label…</strong> Still working (${elapsed}s elapsed). OCR and model extraction can take up to about 90 seconds on the hosted demo.`,
+      "loading"
+    );
+  }, 5000);
 
   try {
     const data = new FormData(form);
@@ -190,6 +199,7 @@ async function runVerify(event) {
   } catch (err) {
     setVerifyStatus(`<strong>Could not verify:</strong> ${escapeHtml(err.message || "Network error")}`, "error");
   } finally {
+    if (timerId !== null) window.clearInterval(timerId);
     setVerifyLoading(false);
   }
 }
