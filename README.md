@@ -1,6 +1,6 @@
 # Treasury Label Verify
 
-AI-powered alcohol label verification prototype for the Treasury take-home assessment. Compares TTB-style label artwork against application fields using **EasyOCR (rotation-aware)**, a **user-selected LLM extraction phase**, and deterministic **field comparison rules**.
+Automated alcohol label verification prototype for the Treasury take-home assessment. Compares TTB-style label artwork against application fields using **EasyOCR (rotation-aware)**, a **user-selected LLM extraction phase**, and deterministic **field comparison rules**.
 
 ## Features
 
@@ -13,14 +13,14 @@ AI-powered alcohol label verification prototype for the Treasury take-home asses
 
 ## Quick start (local)
 
-Recommended path: `E:\dev\treasury-label-verify` (avoid Google Drive for virtualenvs).
-
 ```bash
-cd E:\dev\treasury-label-verify
+git clone https://github.com/tom-deepperson/treasury-label-verify.git
+cd treasury-label-verify
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate   # Windows
+# source .venv/bin/activate   # macOS/Linux
 pip install -r requirements.txt
-copy .env.example .env
+copy .env.example .env     # Windows: copy / macOS/Linux: cp
 python scripts/generate_samples.py
 uvicorn app.main:app --reload --port 8080
 ```
@@ -62,33 +62,26 @@ Suggested manual checks:
 **Important:** set `GOOGLE_CLOUD_PROJECT` in `.env` and use the **personal** Google account that owns that project. If `gcloud` is on your business account, see [DEPLOY_AUTH.md](DEPLOY_AUTH.md).
 
 ```powershell
-cd E:\dev\treasury-label-verify
+cd treasury-label-verify
 # PowerShell:
 .\scripts\deploy.ps1
 # Command Prompt (cmd):
 scripts\deploy.bat
 ```
 
-## Reviewer access (Treasury)
+## Reviewer access
 
-Provide reviewers:
+For the hosted demo, provide:
 
 1. Deployed URL
 2. Username (`REVIEWER_USERNAME`)
 3. Password (`REVIEWER_PASSWORD`)
 
-Note the **10-test quota** applies to reviewer logins only.
+The **10-test quota** applies to reviewer logins.
 
-## Developer access (you)
+## Configuration
 
-Set in `.env` / Cloud Run env vars (keep private, not for Treasury):
-
-```env
-DEVELOPER_USERNAME=developer
-DEVELOPER_PASSWORD=your-strong-dev-password
-```
-
-Developer login bypasses the 10-test quota on the live deploy. Header shows `ROLE: developer` and `TESTS: unlimited (developer)`.
+Copy `.env.example` to `.env` and set API keys, session secret, and login credentials. See `.env.example` for all options.
 
 ## Tests
 

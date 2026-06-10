@@ -63,10 +63,10 @@ If you see permission errors, you are still on the wrong account.
 
 ## Deploy
 
-From `E:\dev\treasury-label-verify` with `.env` filled in:
+From the project root with `.env` filled in:
 
 ```powershell
-cd E:\dev\treasury-label-verify
+cd treasury-label-verify
 .\scripts\deploy.ps1
 ```
 
