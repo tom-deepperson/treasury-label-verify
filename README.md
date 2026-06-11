@@ -1,6 +1,6 @@
 # Treasury Label Verify
 
-Automated alcohol label verification prototype for the Treasury take-home assessment. Compares label artwork inside a **TTB application affix rectangle** against application fields using **Google Cloud Vision OCR** (with field-aware assembly), a deterministic **OCR parser**, optional **LLM rescue on compare FAIL**, and **rule-based comparison**.
+Automated verification of alcohol label artwork for the **AFFIX COMPLETE SET OF LABELS BELOW** section on [TTB Form F 5100.31](https://www.ttb.gov/forms/form-f510031-application-for-and-certification-exemption-of-label-bottle-approval). Uploads are cropped photos of that affix area (brand and neck stickers on the white rectangle); the tool compares OCR reads against application field data using **Google Cloud Vision OCR** (with field-aware assembly), a deterministic **OCR parser**, optional **LLM rescue on compare FAIL**, and **rule-based comparison**.
 
 ## Features
 

@@ -70,7 +70,7 @@
 
     <div class="panel">
       <h2>BATCH VERIFY (SEQUENTIAL, 1 LABEL AT A TIME)</h2>
-      <p class="hint">Upload multiple images plus a JSON applications file from samples/applications.json format. Each label consumes one test from quota.</p>
+      <p class="hint">Load the bundled sample set (JSON + label images), then click Verify batch. Use custom images only if you are testing your own labels.</p>
       <form id="batch-form">
         {% if use_llm %}
         <label for="batch_llm_model">LLM Model</label>
@@ -83,14 +83,31 @@
         <p class="hint">OCR parser only (LLM disabled).</p>
         <input type="hidden" id="batch_llm_model" name="llm_model" value="ocr-parser">
         {% endif %}
-        <label for="batch_images">Label Images (multiple)</label>
-        <input id="batch_images" name="images" type="file" accept="image/*" multiple required>
         <label for="applications_json">Applications JSON</label>
         <textarea id="applications_json" name="applications_json" required>[]</textarea>
-        <button class="btn btn-secondary" type="button" id="load-samples">LOAD SAMPLE JSON</button>
-        <button class="btn btn-secondary" type="submit">UPLOAD BATCH</button>
+        <div class="form-actions">
+          <button class="btn btn-secondary" type="button" id="load-samples">LOAD SAMPLE JSON</button>
+          <button class="btn btn-primary" type="submit" id="batch-submit">VERIFY BATCH</button>
+        </div>
+        <details class="batch-custom">
+          <summary>Custom label images (optional)</summary>
+          <p class="hint">Override bundled samples by choosing your own PNG/JPG files in the same order as the JSON array.</p>
+          <label for="batch_images">Label Images (multiple)</label>
+          <input id="batch_images" name="images" type="file" accept="image/*" multiple>
+          <p id="batch-image-summary" class="hint batch-image-summary">No images loaded yet.</p>
+        </details>
       </form>
+      <div id="batch-status" class="verify-status" aria-live="polite"></div>
       <div id="batch-log" class="log">&gt; batch idle<span class="blink"></span></div>
+    </div>
+    <div id="working-dialog" class="working-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="working-dialog-title">
+      <div class="working-dialog-panel">
+        <p id="working-dialog-title" class="working-dialog-title">Working…</p>
+        <p id="working-dialog-message" class="working-dialog-message">Please wait.</p>
+        <div class="working-dialog-actions">
+          <button type="button" class="btn btn-secondary" id="batch-cancel" hidden>CANCEL</button>
+        </div>
+      </div>
     </div>
   </div>
   <script src="/static/terminal.js"></script>
