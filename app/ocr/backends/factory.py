@@ -15,6 +15,16 @@ def _running_on_cloud_run() -> bool:
     return bool(os.getenv("K_SERVICE", "").strip())
 
 
+def skip_rotation_sweeps() -> bool:
+    """Single Vision read on Cloud Run; sweeps add cost and false orientation metadata."""
+    override = os.getenv("SKIP_ROTATION_SWEEP", "").strip().lower()
+    if override in {"1", "true", "yes"}:
+        return True
+    if override in {"0", "false", "no"}:
+        return False
+    return _running_on_cloud_run() and get_backend_name() == "vision"
+
+
 def get_rotation_backend_name() -> str:
     """Backend for rotation/skew sweeps. Local dev defaults to EasyOCR; Cloud Run uses Vision."""
     primary = get_backend_name()

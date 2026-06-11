@@ -54,10 +54,10 @@ The first iteration used **EasyOCR only**. That was enough to prove the pipeline
 - Higher recall on colored stickers, serif/script fonts, and photocopied proofs in our sample set
 - Managed API on Cloud Run: no multi-GB model in memory for the primary pass (~$0.0015 per label at document pricing)
 
-**Hybrid strategy** (current default):
+**Hybrid strategy** (local dev default):
 
-1. **Rotation/skew detection** — EasyOCR (`ROTATION_OCR_BACKEND=easyocr`) sweeps 0/90/180/270° and small skew corrections locally. This avoids billing Vision four times per upload while keeping orientation logic deterministic.
-2. **Final OCR read** — Vision runs once on the deskewed image (`OCR_BACKEND=vision`).
+1. **Cloud Run** — single Vision `document_text_detection` read (`SKIP_ROTATION_SWEEP` auto via `K_SERVICE`). Vision handles multi-orientation text in affix photos; explicit sweeps added cost and false “Turned N°” metadata.
+2. **Local dev with Vision** — EasyOCR (`ROTATION_OCR_BACKEND=easyocr`) sweeps 0/90/180/270° and skew before the final Vision read, to avoid billing Vision many times per upload.
 3. **Fallback path** — Set `OCR_BACKEND=easyocr` (or `paddle`) for fully offline dev without GCP credentials.
 
 `scripts/benchmark_ocr.py` compares backends against the 32 affix-space samples and writes reports to `data/ocr_benchmark/`.

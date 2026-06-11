@@ -48,6 +48,16 @@ def test_upright_sample_prefers_zero_rotation():
     assert result.per_sticker is False
 
 
+@pytest.mark.skipif(not (SAMPLES / "layout_footer_strip_pass.png").exists(), reason="samples not generated")
+def test_layout_footer_strip_keeps_upright_metadata():
+    image_bytes = (SAMPLES / "layout_footer_strip_pass.png").read_bytes()
+    result = extract_text_with_rotation(image_bytes)
+    assert result.detected_rotation_deg == 0
+    assert result.per_sticker is False
+    assert result.was_upright is True
+    assert "OLD TOM" in result.text.upper() or "GOVERNMENT WARNING" in result.text.upper()
+
+
 @pytest.mark.skipif(not (SAMPLES / "rotated_180_pass.png").exists(), reason="samples not generated")
 def test_inverted_brand_sticker_uses_per_sticker_mode():
     image_bytes = (SAMPLES / "rotated_180_pass.png").read_bytes()

@@ -150,7 +150,7 @@ The deploy script enables Cloud Vision, grants the Cloud Run runtime service acc
 | Cloud Run env | Value |
 |---------------|-------|
 | `OCR_BACKEND` | `vision` |
-| `ROTATION_OCR_BACKEND` | `easyocr` |
+| Rotation sweeps | off (single Vision read; `K_SERVICE` auto) |
 | `USE_LLM` | `1` |
 | `MAX_TESTS` | `50` |
 | `WARM_OCR` | `1` |
@@ -189,6 +189,7 @@ OCR-related settings:
 | `USE_LLM` | `1` | `0` = OCR parser only; `1` = LLM rescue on compare FAIL or REVIEW |
 | `OCR_BACKEND` | `vision` | Primary OCR engine: `vision`, `easyocr`, or `paddle` |
 | `ROTATION_OCR_BACKEND` | `easyocr` | Local backend for rotation/skew sweeps when primary is `vision` |
+| `SKIP_ROTATION_SWEEP` | auto on Cloud Run | `1` = single Vision read, no orientation metadata; `0` = force sweeps |
 | `WARM_OCR` | `1` on deploy | Pre-load OCR backends at startup |
 
 Benchmark OCR backends against samples:
@@ -229,7 +230,7 @@ Rotation OCR tests use `OCR_BACKEND=easyocr` by default. Set `OCR_INTEGRATION=1`
 ## Known limitations
 
 - Vision OCR requires GCP credentials locally (`gcloud auth application-default login`) or the Cloud Run service account on deploy
-- Rotation/skew sweeps use EasyOCR to avoid multiple Vision API calls per label; per-sticker mode adds one extra Vision read when brand and warning orientations conflict
+- Cloud Run uses a single Vision read (rotation sweeps off). Local dev uses EasyOCR sweeps unless `SKIP_ROTATION_SWEEP=1`
 - Color stickers and script fonts may REVIEW on EasyOCR-only local runs; Vision on Cloud Run is the intended production path
 - Uploads must be pre-cropped affix rectangles (not full F 5100.31 form scans)
 - LLM rescue runs when compare FAILs or flags REVIEW (`USE_LLM=1`); set `USE_LLM=0` for parser-only offline dev

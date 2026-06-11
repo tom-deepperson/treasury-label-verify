@@ -9,7 +9,13 @@ from typing import Literal
 import cv2
 import numpy as np
 
-from app.ocr.backends.factory import get_backend, get_backend_name, get_rotation_backend_name, warm_backend
+from app.ocr.backends.factory import (
+    get_backend,
+    get_backend_name,
+    get_rotation_backend_name,
+    skip_rotation_sweeps,
+    warm_backend,
+)
 from app.ocr.label_region import LabelRegionInfo, extract_label_region
 from app.ocr.field_assembly import assemble_label_text, assemble_warning_from_region, raw_lines_from_document
 from app.ocr.sticker_regions import StickerRegion, discover_sticker_regions
@@ -405,6 +411,18 @@ def _rotation_selection_score(text: str, ocr_score: float) -> float:
     return ocr_score * (0.25 + 0.75 * readability)
 
 
+def _cardinal_rotation_worth_apply(baseline: float, improved: float, angle: int) -> bool:
+    """Ignore marginal OCR score wins that would rotate an already-readable label."""
+    if angle == 0:
+        return False
+    gain = improved - baseline
+    if gain < 0.10:
+        return False
+    if baseline > 0 and gain / baseline < 0.06:
+        return False
+    return True
+
+
 def _best_cardinal_rotation(
     crop: np.ndarray,
     *,
@@ -416,16 +434,18 @@ def _best_cardinal_rotation(
     upright_text, upright_score = _run_ocr(prepared, backend_name=rotation_backend)
     best_angle = 0
     best_text = upright_text
-    best_score = _rotation_selection_score(upright_text, upright_score)
+    upright_combined = _rotation_selection_score(upright_text, upright_score)
+    best_score = upright_combined
 
-    for angle in (90, 180, 270):
-        rotated = _rotate_image(prepared, angle)
-        text, score = _run_ocr(rotated, backend_name=rotation_backend)
-        combined = _rotation_selection_score(text, score)
-        if combined > best_score:
-            best_score = combined
-            best_text = text
-            best_angle = angle
+    if not _looks_upright(upright_text, upright_score):
+        for angle in (90, 180, 270):
+            rotated = _rotate_image(prepared, angle)
+            text, score = _run_ocr(rotated, backend_name=rotation_backend)
+            combined = _rotation_selection_score(text, score)
+            if combined > best_score and _cardinal_rotation_worth_apply(upright_combined, combined, angle):
+                best_score = combined
+                best_text = text
+                best_angle = angle
 
     return best_angle, best_score, best_text
 
@@ -628,7 +648,48 @@ def extract_text_with_rotation(image_bytes: bytes) -> OCRResult:
     return extract_text_per_sticker(image_bytes)
 
 
+def _extract_vision_direct(image_bytes: bytes) -> OCRResult:
+    """One Vision document read; no cardinal/skew sweeps or per-sticker rotation."""
+    primary_backend = get_backend_name()
+    image = _resize(_decode_image(image_bytes))
+    image, label_region = extract_label_region(image)
+    primary_input = _prepare_for_backend(image, primary_backend)
+    best_text, best_raw_score, primary_document = _run_ocr_with_document(
+        primary_input,
+        backend_name=primary_backend,
+    )
+    raw_lines = raw_lines_from_document(primary_document)
+    merged_text = normalize_ocr_text(best_text)
+    if not _warning_looks_complete(merged_text):
+        warning_text, warning_lines = _ocr_warning_region(image)
+        warning_text = normalize_ocr_text(warning_text)
+        if warning_text and _label_readability_score(warning_text) >= _label_readability_score(merged_text):
+            merged_text = normalize_ocr_text(_merge_warning_text(best_text, warning_text))
+            raw_lines = _extend_raw_lines(raw_lines, warning_text)
+        if warning_lines:
+            raw_lines = _extend_raw_lines(raw_lines, "\n".join(warning_lines))
+    avg_conf = best_raw_score / max(len(best_text), 1)
+    gc.collect()
+    return OCRResult(
+        text=merged_text,
+        detected_rotation_deg=0,
+        skew_correction_deg=0,
+        was_upright=True,
+        brand_inverted=False,
+        per_sticker=False,
+        brand_rotation_deg=0,
+        warning_rotation_deg=0,
+        confidence=avg_conf,
+        label_region=label_region,
+        raw_lines=raw_lines,
+        brand_crop=None,
+    )
+
+
 def extract_text_per_sticker(image_bytes: bytes) -> OCRResult:
+    if skip_rotation_sweeps():
+        return _extract_vision_direct(image_bytes)
+
     primary_backend = get_backend_name()
     rotation_backend = get_rotation_backend_name()
 
@@ -640,14 +701,16 @@ def extract_text_per_sticker(image_bytes: bytes) -> OCRResult:
     best_angle = 0
     best_text = upright_text
     best_raw_score = upright_score
-    best_score = _rotation_selection_score(upright_text, upright_score)
+    upright_combined = _rotation_selection_score(upright_text, upright_score)
+    best_score = upright_combined
+    global_upright = _looks_upright(upright_text, upright_score)
 
-    if not _looks_upright(upright_text, upright_score):
+    if not global_upright:
         for angle in (90, 180, 270):
             rotated = _rotate_image(rotation_input, angle)
             text, score = _run_ocr(rotated, backend_name=rotation_backend)
             combined = _rotation_selection_score(text, score)
-            if combined > best_score:
+            if combined > best_score and _cardinal_rotation_worth_apply(upright_combined, combined, angle):
                 best_score = combined
                 best_text = text
                 best_angle = angle
@@ -660,7 +723,12 @@ def extract_text_per_sticker(image_bytes: bytes) -> OCRResult:
             image,
             rotation_backend=rotation_backend,
         )
-        if not conflict and brand_angle_hint == warning_angle_hint and brand_angle_hint != 0:
+        if (
+            not conflict
+            and not global_upright
+            and brand_angle_hint == warning_angle_hint
+            and brand_angle_hint != 0
+        ):
             uniform_sticker_angle = brand_angle_hint
 
     if uniform_sticker_angle:

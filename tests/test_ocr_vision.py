@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 from app.ocr.backends.vision import GoogleVisionBackend, document_from_full_text_annotation
 from app.ocr.field_assembly import assemble_label_text
@@ -103,3 +104,52 @@ def test_rotation_backend_respects_easyocr_locally(monkeypatch):
     monkeypatch.setenv("ROTATION_OCR_BACKEND", "easyocr")
     clear_backend_cache()
     assert get_rotation_backend_name() == "easyocr"
+
+
+def test_skip_rotation_sweeps_on_cloud_run(monkeypatch):
+    from app.ocr.backends.factory import clear_backend_cache, skip_rotation_sweeps
+
+    monkeypatch.setenv("K_SERVICE", "treasury-label-verify")
+    monkeypatch.setenv("OCR_BACKEND", "vision")
+    monkeypatch.delenv("SKIP_ROTATION_SWEEP", raising=False)
+    clear_backend_cache()
+    assert skip_rotation_sweeps() is True
+
+
+def test_skip_rotation_sweeps_off_locally(monkeypatch):
+    from app.ocr.backends.factory import clear_backend_cache, skip_rotation_sweeps
+
+    monkeypatch.delenv("K_SERVICE", raising=False)
+    monkeypatch.setenv("OCR_BACKEND", "vision")
+    monkeypatch.delenv("SKIP_ROTATION_SWEEP", raising=False)
+    clear_backend_cache()
+    assert skip_rotation_sweeps() is False
+
+
+def test_vision_direct_path_avoids_rotation_sweeps(monkeypatch):
+    from pathlib import Path
+    from unittest.mock import patch
+
+    from app.ocr.backends.factory import clear_backend_cache
+    from app.ocr_service import extract_text_with_rotation
+
+    sample = Path(__file__).resolve().parents[1] / "samples" / "labels" / "old_tom_pass.png"
+    if not sample.exists():
+        pytest.skip("samples not generated")
+
+    monkeypatch.setenv("K_SERVICE", "treasury-label-verify")
+    monkeypatch.setenv("OCR_BACKEND", "vision")
+    clear_backend_cache()
+
+    fake_document = document_from_full_text_annotation(_make_annotation())
+    with patch("app.ocr_service._best_cardinal_rotation") as mock_cardinal:
+        with patch("app.ocr_service._run_ocr_with_document") as mock_read:
+            mock_read.return_value = (fake_document.full_text, fake_document.avg_confidence, fake_document)
+            result = extract_text_with_rotation(sample.read_bytes())
+
+    mock_cardinal.assert_not_called()
+    assert result.detected_rotation_deg == 0
+    assert result.skew_correction_deg == 0
+    assert result.was_upright is True
+    assert result.per_sticker is False
+    assert "OLD TOM" in result.text
